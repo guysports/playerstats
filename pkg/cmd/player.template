@@ -1,0 +1,83 @@
+<?php
+	$header_str = "Player Season Stats";
+	require '../functions1.inc';
+
+	if (!$to_auth) {
+?>
+<div id="Layer3" style="position:absolute; width:620px; height:653px; z-index:2; left: 249px; top: 260px; visibility: visible">
+<div align="left">
+<table width="100%" border="2">
+<tr><td>
+<!-- Insert Page Specific Code Here -->
+<table width="100%" border="1" cellspacing="5" bordercolor="#000099">
+    <tr>
+        <th width="15%">Player</th>
+        <th width="15%">Team</th>
+        <th width="10%"> Cost</th>
+        <th width="15%">Games Played</th>
+        <th width="5%">Points</th>
+        <th width="20%">Last 3-Game Average</th>
+        <th width="20%">Last 5-Game Average</th>
+    </tr>
+    <tr align="center">
+        <td>{{.Name}}</td>
+        <td>{{.Team}}</td>
+        <td>{{.Cost}}</td>
+        <td>{{.GamesPlayed}}</td>
+        <td>{{.TotalPoints}}</td>
+        <td>{{printf "%.2f" .Last3Avg}}</td>
+        <td>{{printf "%.2f" .Last5Avg}}</td>
+    </table>
+    </td></tr>
+    <tr><td>
+    <table width="100%" border="1" cellspacing="5" bordercolor="#000099">
+    <tr>
+        <th width="10%">Star Man</th>
+        <th width="15%">+7 Ratings</th>
+        <th width="15%">Goals</th>
+        <th width="15%">Assists</th>
+        <th width="20%">Clean Sheets</th>
+        <th width="15%">Cards</th>
+    </tr>
+    <tr align="center">
+        <td>{{.StarMan}}</td>
+        <td>{{.SevenPlus}}</td>
+        <td>{{.Goals}}</td>
+        <td>{{.Assists}}</td>
+        <td>{{.CleanSheets}}</td>
+        <td>{{.Cards}}</td>
+    </table>
+    </td></tr>
+    <tr><td>
+    <table width="100%" border="1" cellspacing="5" bordercolor="#000099">
+    <tr>
+        <th colspan="5">Fixtures</th>
+    </tr>
+    <tr>
+        <th width="10%">Game Week</th>
+        <th width="20%">Date</th>
+        <th width="20%">Competition</th>
+        <th width="30%">Fixture</th>
+        <th width="20%">Result</th>
+    </tr>
+    {{ with .TeamFixtures }}
+		{{ range . }}
+    <tr align="center">
+        <td>{{.Gw}}</td>
+        <td>{{.Date}}</td>
+        <td>{{.Competition}}</td>
+        <td>{{.Fixture}}</td>
+        <td>{{.Result}}</td>
+    </tr>
+        {{ end }}
+    {{ end }}
+    </table>
+<!-- End of specific Insert -->
+    </td></tr></table>
+            </div>
+          </div>
+</body>
+</html>
+<?php
+}
+?>
