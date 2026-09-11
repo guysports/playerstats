@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Player insights and match history" />
+    <title>Player Insights | GuySports</title>
+    <link rel="stylesheet" href="./styles.css?v=20260910-availability" />
+</head>
+
+<body>
+    <div class="page-shell">
+        <header class="site-header">
+            <div>
+                <p class="kicker">GuySports / 2026 season</p>
+                <h2>Player Insights</h2>
+                <ul class="lede">
+                    <li>Expand squads for players, scoring, and statistical data</li>
+                    <li>Explore historical match data</li>
+                    <li>Query to list players sorted by data</li>
+                </ul>
+            </div>
+            <div class="header-mark">
+                <img src="https://www.guysports.co.uk/guysports/images/logo.gif" alt="GuySports" />
+            </div>
+        </header>
+
+        <main>
+            <section class="toolbar" aria-label="Player directory controls">
+                <label class="search-field">
+            <span>Search or rank players</span>
+            <input id="search" type="search" placeholder="Try: top 5 assists or bottom 10 tackles" autocomplete="off" />
+          </label>
+                <div class="directory-status" id="directory-status">Loading directory...</div>
+            </section>
+
+            <section id="team-list" class="team-list" aria-live="polite"></section>
+            <section id="error-state" class="state-panel is-hidden" role="alert"></section>
+        </main>
+    </div>
+    <script type="module" src="./app.js?v=20260910-availability"></script>
+</body>
+
+</html>

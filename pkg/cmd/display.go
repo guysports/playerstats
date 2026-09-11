@@ -10,10 +10,11 @@ import (
 	"strconv"
 	"strings"
 	"text/template"
+	"time"
 
 	"github.com/jedib0t/go-pretty/v6/table"
 
-	goftp "gopkg.in/dutchcoders/goftp.v1"
+	"github.com/jlaffaye/ftp"
 )
 
 type (
@@ -26,115 +27,137 @@ type (
 	}
 )
 
-func (d *Display) Run(globals *Globals) error {
-	// Load in the statistics data from source
-	players := []types.Player{}
-	matchweeks := []types.MatchWeek{}
-	squadMap := globals.SquadMap
-	competitionMap := globals.CompetitionMap
-	var data []byte
-	var err error
+func formatDate(value string) string {
+	parsed, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		return value
+	}
+	return parsed.Local().Format("15:04 02-Jan-06")
+}
 
-	// Obtain the player data
-	data, err = helper.GetJSON(globals.Source)
+func getGameWeekMatches(data []byte) ([]types.GameWeekMatch, error) {
+	gameWeek := types.GameWeek{}
+	if err := json.Unmarshal(data, &gameWeek); err != nil {
+		return nil, err
+	}
+	return gameWeek.Data.Items, nil
+}
+
+func loadPlayers(source string) ([]types.Player, error) {
+	data, err := helper.GetJSON(source)
+	if err != nil {
+		return nil, err
+	}
+
+	players := []types.Player{}
+	if err := json.Unmarshal(data, &players); err != nil {
+		return nil, err
+	}
+	return players, nil
+}
+
+func (d *Display) Run(globals *Globals) error {
+	players, err := loadPlayers(globals.Source)
 	if err != nil {
 		return err
 	}
+	var data []byte
 	_ = json.Unmarshal(data, &players)
 
-	// Obtain the game week data
-	data, err = helper.GetJSON(globals.MatchesSource)
-	if err != nil {
-		return err
-	}
-	_ = json.Unmarshal(data, &matchweeks)
-
-	// Extract matches from each week
-	matchesMap := map[string]types.Match{}
-	for _, matchweek := range matchweeks {
-		for _, match := range matchweek.MatchesInWeek {
-			key := fmt.Sprintf("%d", match.Id)
-			matchesMap[key] = match
-		}
-	}
-
-	// The match Ids in the player struct are unreliable so get the matches by player squad id
+	// Initialize empty match maps for each player (matching by numeric squad id not available)
 	for i, player := range players {
-		players[i].Matches = map[string]types.Match{}
-		for _, match := range matchesMap {
-			if player.SquadId == match.HomeSquadId || player.SquadId == match.AwaySquadId {
-				players[i].Matches[fmt.Sprintf("%d", match.Id)] = match
-			}
+		// Obtain the match result data for each player
+		data, err = helper.GetJSON(fmt.Sprintf(globals.MatchesSource, player.PlayerId))
+		if err != nil {
+			return err
+		}
+		players[i].Results, err = getGameWeekMatches(data)
+		if err != nil {
+			return err
 		}
 	}
 
 	filteredPlayers := []types.Player{}
 
-	// Add team and position to each player
+	// Add display-only fields to each player.
 	for i, player := range players {
-		// Check any filters and only add player if filter is met
 		filter := parseFilters(d.Filter)
-
-		// Check player against filter
 		filteredPlayer := checkPlayerValid(&player, filter)
 		if filteredPlayer == nil {
 			continue
 		}
-		cost := float64(player.Cost) / 1000000
-		filteredPlayer.Team = types.Teams[player.SquadId]
-		filteredPlayer.Job = types.Position[player.Positions[0]]
+		cost := player.Price
 		filteredPlayer.CostDisp = fmt.Sprintf("&pound;%.2fm", cost)
 		filteredPlayers = append(filteredPlayers, *filteredPlayer)
 
-		players[i].Team = types.Teams[player.SquadId]
-		players[i].Job = types.Position[player.Positions[0]]
 		players[i].CostDisp = fmt.Sprintf("&pound;%.2fm", cost)
 	}
 
 	if d.Html {
-		// Generate rendered player and match information
 		renderPlayers := []types.RenderedPlayer{}
 		for _, player := range players {
 			renderedPlayer := types.RenderedPlayer{
-				Id:          player.Id,
-				Name:        fmt.Sprintf("%s %s", player.FirstName, player.LastName),
-				Team:        player.Team,
-				Position:    player.Job,
-				Cost:        player.CostDisp,
-				TotalPoints: player.InPlayStats.TotalPoints,
-				GamesPlayed: player.InPlayStats.GamesPlayed,
-				StarMan:     player.InPlayStats.StarManAwards,
-				SevenPlus:   player.InPlayStats.SevenPlusRatings,
-				Goals:       player.InPlayStats.Goals,
-				Assists:     player.InPlayStats.Assists,
-				CleanSheets: player.InPlayStats.CleanSheets,
-				Cards:       player.InPlayStats.Cards,
-				Last3Avg:    player.InPlayStats.Last3Avg,
-				Last5Avg:    player.InPlayStats.Last5Avg,
+				Id:             player.PlayerId,
+				Name:           fmt.Sprintf("%s %s", player.FirstName, player.LastName),
+				Team:           player.ContestantShortName,
+				Position:       player.Position,
+				Cost:           player.CostDisp,
+				AveragePoints:  player.AveragePoints,
+				Last3Average:   player.Last3Average,
+				TotalPoints:    player.TotalPoints,
+				Goals:          player.Goals,
+				Assists:        player.Assists,
+				ShotsOnTarget:  player.ShotsOnTarget,
+				ChancesCreated: player.ChancesCreated,
+				Tackles:        player.Tackles,
 			}
+
 			// Generate rendered fixtures
 			renderedFixtures := []types.RenderedMatch{}
-			for _, match := range player.Matches {
-				if match.Status == "complete" {
-					fixture := types.RenderedMatch{
-						Gw:          match.Gw,
-						Competition: competitionMap[match.CompetitionId].Name,
-						Fixture:     fmt.Sprintf("%s v %s", squadMap[match.HomeSquadId].Name, squadMap[match.AwaySquadId].Name),
-						Result:      fmt.Sprintf("%d v %d", match.HomeScore, match.AwayScore),
-						Date:        strings.Split(match.Date, "T")[0],
-					}
-					renderedFixtures = append(renderedFixtures, fixture)
+			for _, match := range player.NextGameweekFixtures {
+				competition := "Premier League"
+				if match.CompetitionName != nil {
+					competition = *match.CompetitionName
 				}
+				matchFixture := fmt.Sprintf("%s v %s", player.ContestantShortName, match.OpponentShortName)
+				if !match.IsHome {
+					matchFixture = fmt.Sprintf("%s v %s", match.OpponentShortName, player.ContestantShortName)
+				}
+				fixture := types.RenderedMatch{
+					Gw:          match.GameWeek,
+					Competition: competition,
+					Fixture:     matchFixture,
+					Venue:       match.Venue,
+					KickOff:     formatDate(match.KickoffAt),
+				}
+				renderedFixtures = append(renderedFixtures, fixture)
 			}
 
 			sort.Slice(renderedFixtures, func(i, j int) bool {
-				if renderedFixtures[i].Date > renderedFixtures[j].Date {
-					return true
-				}
-				return false
+				return renderedFixtures[i].KickOff > renderedFixtures[j].KickOff
 			})
 
+			renderedResults := []types.RenderedResult{}
+			for _, result := range player.Results {
+				competition := "Premier League"
+				if result.CompetitionLabel != "" {
+					competition = result.CompetitionLabel
+				}
+				renderedResult := types.RenderedResult{
+					GameWeek:    result.MdLabel,
+					Competition: competition,
+					HomeTeam:    result.LeftTeam.ShortName,
+					AwayTeam:    result.RightTeam.ShortName,
+					HomeScore:   result.LeftTeam.Score,
+					AwayScore:   result.RightTeam.Score,
+					Venue:       result.Venue,
+					KickOff:     formatDate(result.KickoffAt),
+				}
+				renderedResults = append(renderedResults, renderedResult)
+			}
+
 			renderedPlayer.TeamFixtures = renderedFixtures
+			renderedPlayer.TeamResults = renderedResults
 			renderPlayers = append(renderPlayers, renderedPlayer)
 		}
 		formatAsHtml(renderPlayers, globals.FtpPassword)
@@ -142,89 +165,56 @@ func (d *Display) Run(globals *Globals) error {
 	}
 
 	if d.PlayerNames == nil || d.PlayerNames[0] == "all" {
-		displayPlayerInfo(filteredPlayers, matchesMap, competitionMap, squadMap, d.Sort)
+		displayPlayerInfo(filteredPlayers, d.Sort)
 	} else {
 		selectPlayers := []types.Player{}
-		for _, player := range d.PlayerNames {
+		for _, name := range d.PlayerNames {
 			for _, playerstat := range players {
-				if player == playerstat.LastName {
+				if name == playerstat.LastName {
 					selectPlayers = append(selectPlayers, playerstat)
 				}
 			}
 		}
-		displayPlayerInfo(selectPlayers, matchesMap, competitionMap, squadMap, d.Sort)
+		displayPlayerInfo(selectPlayers, d.Sort)
 	}
 	return nil
 }
 
-func displayPlayerInfo(players []types.Player, matches map[string]types.Match, competitions map[int]types.Competition, squads map[int]types.Squad, criteria string) {
+func displayPlayerInfo(players []types.Player, criteria string) {
 	if criteria != "" {
 		switch criteria {
 		case "position":
 			sort.Slice(players, func(i, j int) bool {
-				if players[i].Positions[0] < players[j].Positions[0] {
+				if players[i].Position < players[j].Position {
 					return true
 				}
-				if players[i].Positions[0] > players[j].Positions[0] {
+				if players[i].Position > players[j].Position {
 					return false
 				}
-				return players[i].SquadId < players[j].SquadId
+				return players[i].ContestantShortName < players[j].ContestantShortName
 			})
-			break
 		case "team":
 			sort.Slice(players, func(i, j int) bool {
-				return players[i].SquadId < players[j].SquadId
+				return players[i].ContestantShortName < players[j].ContestantShortName
 			})
-			break
 		}
 	}
 
-	var pageSize int
 	for _, player := range players {
 		t := table.NewWriter()
 		t.SetOutputMirror(os.Stdout)
 		t.AppendHeader(table.Row{"Position", "Player", "Team", "Cost", "Total Points"})
-		cost := float64(player.Cost) / 1000000
-		t.AppendRow(table.Row{player.Job, fmt.Sprintf("%s %s", player.FirstName, player.LastName), player.Team, fmt.Sprintf("£%.2fm", cost), player.InPlayStats.TotalPoints})
-		t.AppendRow(table.Row{"Games Played", "Star Man Awards", "+7 Ratings", "Goals", "Assists", "Clean Sheets", "Cards"})
-		t.AppendRow(table.Row{player.InPlayStats.GamesPlayed,
-			player.InPlayStats.StarManAwards,
-			player.InPlayStats.SevenPlusRatings,
-			player.InPlayStats.Goals,
-			player.InPlayStats.Assists,
-			player.InPlayStats.CleanSheets,
-			player.InPlayStats.Cards})
-		t.AppendRow(table.Row{"Date", "Competition", "Fixture", "Score", "Points Scored"})
-		gameRows := []table.Row{}
-		completedMatches := []types.Match{}
-		for _, match := range player.Matches {
-			if match.Status == "complete" {
-				completedMatches = append(completedMatches, match)
-			}
-		}
-
-		sort.Slice(completedMatches, func(i, j int) bool {
-			if completedMatches[i].Date > completedMatches[j].Date {
-				return false
-			}
-			return true
-		})
-
-		for _, match := range completedMatches {
-			gameRows = append(gameRows, table.Row{
-				strings.Split(match.Date, "T")[0],
-				competitions[match.CompetitionId].Name,
-				fmt.Sprintf("%s v %s", squads[match.HomeSquadId].Name, squads[match.AwaySquadId].Name),
-				fmt.Sprintf("%d v %d", match.HomeScore, match.AwayScore),
-				fmt.Sprintf("%d", player.InPlayStats.MatchScores[fmt.Sprintf("%d", match.Id)]),
-			})
-		}
-		t.AppendRows(gameRows)
-		t.SetPageSize(pageSize)
+		cost := player.Price
+		t.AppendRow(table.Row{player.Position, fmt.Sprintf("%s %s", player.FirstName, player.LastName), player.ContestantShortName, fmt.Sprintf("£%.2fm", cost), player.TotalPoints})
+		t.AppendRow(table.Row{"Average Points", "Last 3 Average", "Goals", "Assists", "Shots on Target"})
+		t.AppendRow(table.Row{player.AveragePoints,
+			player.Last3Average,
+			player.Goals,
+			player.Assists,
+			player.ShotsOnTarget})
 		t.Render()
 		t = nil
 	}
-
 }
 
 func formatAsHtml(players []types.RenderedPlayer, password string) {
@@ -234,7 +224,7 @@ func formatAsHtml(players []types.RenderedPlayer, password string) {
 		return
 	}
 	for _, player := range players {
-		f, err := os.Create(fmt.Sprintf("players/%d.php", player.Id))
+		f, err := os.Create(fmt.Sprintf("players/%s.php", player.Id))
 		if err != nil {
 			fmt.Printf("Error opening file %v\n", err)
 			return
@@ -250,24 +240,24 @@ func formatAsHtml(players []types.RenderedPlayer, password string) {
 
 func uploadPlayerStats(players []types.RenderedPlayer, password string) error {
 	// FTP file to guysports
-	ftp, err := goftp.Connect("ftp.guysports.co.uk:21")
+	ftpClient, err := ftp.Dial("ftp.guysports.co.uk:21")
 	if err != nil {
 		return err
 	}
 
-	defer ftp.Close()
+	defer ftpClient.Quit()
 	// Username / password authentication
-	if err = ftp.Login("guysports@guysports.co.uk", password); err != nil {
+	if err = ftpClient.Login("guysports@guysports.co.uk", password); err != nil {
 		return err
 	}
 
-	if err = ftp.Cwd("/public_html/guysports/players"); err != nil {
+	if err = ftpClient.ChangeDir("/public_html/guysports/players"); err != nil {
 		return err
 	}
 
 	for _, player := range players {
-		localFilename := fmt.Sprintf("players/%d.php", player.Id)
-		remoteFilename := fmt.Sprintf("%d.php", player.Id)
+		localFilename := fmt.Sprintf("players/%s.php", player.Id)
+		remoteFilename := fmt.Sprintf("%s.php", player.Id)
 
 		// Upload player stats
 		file, err := os.Open(localFilename)
@@ -275,7 +265,7 @@ func uploadPlayerStats(players []types.RenderedPlayer, password string) error {
 			return err
 		}
 
-		if err := ftp.Stor(remoteFilename, file); err != nil {
+		if err := ftpClient.Stor(remoteFilename, file); err != nil {
 			return err
 		}
 		fmt.Printf("uploaded %s for %s\n", remoteFilename, player.Name)
@@ -301,7 +291,6 @@ func parseFilters(filters []string) *types.PlayerFilter {
 		case "team":
 			playerFilter.Team = value
 			playerFilter.ApplyFilter = true
-			break
 		case "cost":
 			intValue, err := strconv.Atoi(value)
 			if err != nil {
@@ -309,7 +298,6 @@ func parseFilters(filters []string) *types.PlayerFilter {
 			}
 			playerFilter.Cost = intValue
 			playerFilter.ApplyFilter = true
-			break
 		case "points":
 			intValue, err := strconv.Atoi(value)
 			if err != nil {
@@ -317,27 +305,16 @@ func parseFilters(filters []string) *types.PlayerFilter {
 			}
 			playerFilter.Points = intValue
 			playerFilter.ApplyFilter = true
-			break
-		case "games":
-			intValue, err := strconv.Atoi(value)
-			if err != nil {
-				break
-			}
-			playerFilter.Games = intValue
-			playerFilter.ApplyFilter = true
-			break
 		case "average":
 			intValue, err := strconv.Atoi(value)
 			if err != nil {
 				break
 			}
-			playerFilter.Cost = intValue
+			playerFilter.Average = intValue
 			playerFilter.ApplyFilter = true
-			break
 		case "position":
 			playerFilter.Job = value
 			playerFilter.ApplyFilter = true
-			break
 		}
 	}
 	return &playerFilter
@@ -349,32 +326,27 @@ func checkPlayerValid(player *types.Player, filter *types.PlayerFilter) *types.P
 		return player
 	}
 	if filter.Average > 0 {
-		if player.InPlayStats.AvgPoints < filter.Average {
+		if player.AveragePoints < float64(filter.Average) {
 			return nil
 		}
 	}
 	if filter.Cost > 0 {
-		if player.Cost > filter.Cost {
+		if int(player.Price) > filter.Cost {
 			return nil
 		}
 	}
 	if filter.Points > 0 {
-		if player.InPlayStats.TotalPoints < filter.Points {
-			return nil
-		}
-	}
-	if filter.Games > 0 {
-		if player.InPlayStats.GamesPlayed < filter.Games {
+		if player.TotalPoints < filter.Points {
 			return nil
 		}
 	}
 	if filter.Team != "" {
-		if types.Teams[player.SquadId] != filter.Team {
+		if player.ContestantName != filter.Team && player.ContestantShortName != filter.Team {
 			return nil
 		}
 	}
 	if filter.Job != "" {
-		if types.Position[player.Positions[0]] != filter.Job {
+		if player.Position != filter.Job {
 			return nil
 		}
 	}

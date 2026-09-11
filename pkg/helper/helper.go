@@ -2,15 +2,27 @@ package helper
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
+	"os"
 	"strings"
 )
 
 func GetJSON(uri string) ([]byte, error) {
-	if strings.HasPrefix(uri, "https") {
-		// Read data from URI
-		resp, err := http.Get(uri)
+	return GetJSONWithHeaders(uri, nil)
+}
+
+func GetJSONWithHeaders(uri string, headers map[string]string) ([]byte, error) {
+	if strings.HasPrefix(uri, "http") {
+		request, err := http.NewRequest(http.MethodGet, uri, nil)
+		if err != nil {
+			return nil, fmt.Errorf("cannot create request for %q: %v", uri, err)
+		}
+		for key, value := range headers {
+			request.Header.Set(key, value)
+		}
+
+		resp, err := http.DefaultClient.Do(request)
 		if err != nil {
 			return nil, fmt.Errorf("cannot fetch URL %q: %v", uri, err)
 		}
@@ -21,14 +33,14 @@ func GetJSON(uri string) ([]byte, error) {
 
 		// We could check the resulting content type
 		// here if desired.
-		bytes, err := ioutil.ReadAll(resp.Body)
+		bytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return nil, fmt.Errorf("unable read response body %s", err.Error())
 		}
 		return bytes, nil
 	}
 	// Read data from file
-	bytes, err := ioutil.ReadFile(uri)
+	bytes, err := os.ReadFile(uri)
 	if err != nil {
 		return nil, err
 	}

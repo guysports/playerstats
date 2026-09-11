@@ -14,60 +14,81 @@
         <th width="15%">Player</th>
         <th width="15%">Team</th>
         <th width="10%"> Cost</th>
-        <th width="15%">Games Played</th>
+        <th width="15%">Average Points</th>
         <th width="5%">Points</th>
         <th width="20%">Last 3-Game Average</th>
-        <th width="20%">Last 5-Game Average</th>
     </tr>
     <tr align="center">
         <td>{{.Name}}</td>
         <td>{{.Team}}</td>
         <td>{{.Cost}}</td>
-        <td>{{.GamesPlayed}}</td>
+        <td>{{printf "%.2f" .AveragePoints}}</td>
         <td>{{.TotalPoints}}</td>
-        <td>{{printf "%.2f" .Last3Avg}}</td>
-        <td>{{printf "%.2f" .Last5Avg}}</td>
+        <td>{{printf "%.2f" .Last3Average}}</td>
     </table>
     </td></tr>
     <tr><td>
     <table width="100%" border="1" cellspacing="5" bordercolor="#000099">
     <tr>
-        <th width="10%">Star Man</th>
-        <th width="15%">+7 Ratings</th>
         <th width="15%">Goals</th>
         <th width="15%">Assists</th>
-        <th width="20%">Clean Sheets</th>
-        <th width="15%">Cards</th>
+        <th width="20%">Shots on Target</th>
+        <th width="15%">Chances Created</th>
+        <th width="15%">Tackles</th>
     </tr>
     <tr align="center">
-        <td>{{.StarMan}}</td>
-        <td>{{.SevenPlus}}</td>
         <td>{{.Goals}}</td>
         <td>{{.Assists}}</td>
-        <td>{{.CleanSheets}}</td>
-        <td>{{.Cards}}</td>
+        <td>{{.ShotsOnTarget}}</td>
+        <td>{{.ChancesCreated}}</td>
+        <td>{{.Tackles}}</td>
     </table>
     </td></tr>
     <tr><td>
     <table width="100%" border="1" cellspacing="5" bordercolor="#000099">
     <tr>
-        <th colspan="5">Fixtures</th>
+        <th colspan="5">Next Fixture</th>
     </tr>
     <tr>
-        <th width="10%">Game Week</th>
         <th width="20%">Date</th>
         <th width="20%">Competition</th>
+        <th width="30%">Venue</th>
         <th width="30%">Fixture</th>
-        <th width="20%">Result</th>
     </tr>
     {{ with .TeamFixtures }}
 		{{ range . }}
     <tr align="center">
-        <td>{{.Gw}}</td>
-        <td>{{.Date}}</td>
+        <td>{{.KickOff}}</td>
         <td>{{.Competition}}</td>
+        <td>{{.Venue}}</td>
         <td>{{.Fixture}}</td>
-        <td>{{.Result}}</td>
+    </tr>
+        {{ end }}
+    {{ end }}
+    </table>
+    </td></tr>
+    <tr><td>
+    <table width="100%" border="1" cellspacing="5" bordercolor="#000099">
+    <tr>
+        <th colspan="6">Results</th>
+    </tr>
+    <tr>
+        <th width="10%">Game Week</th>
+        <th width="15%">Date</th>
+        <th width="20%">Competition</th>
+        <th width="25%">Fixture</th>
+        <th width ="20%">Venue</th>
+        <th width="15%">Result</th>
+    </tr>
+    {{ with .TeamResults }}
+		{{ range . }}
+    <tr align="center">
+        <td>{{.GameWeek}}</td>
+        <td>{{.KickOff}}</td>
+        <td>{{.Competition}}</td>
+        <td>{{.HomeTeam}} v {{.AwayTeam}}</td>
+        <td>{{.Venue}}</td>
+        <td>{{.HomeScore}} - {{.AwayScore}}</td>
     </tr>
         {{ end }}
     {{ end }}

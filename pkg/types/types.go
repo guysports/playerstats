@@ -1,101 +1,90 @@
 package types
 
-var (
-	Teams = map[int]string{
-		11:  "Everton",
-		8:   "Chelsea",
-		1:   "Manchester United",
-		56:  "Sunderland",
-		110: "Stoke",
-		31:  "Crystal Palace",
-		21:  "West Ham",
-		35:  "WBA",
-		88:  "Hull City",
-		25:  "Middlesborough",
-		3:   "Arsenal",
-		80:  "Swansea City",
-		13:  "Leicester City",
-		43:  "Manchester City",
-		91:  "AFC Bournemouth",
-		14:  "Liverpool",
-		90:  "Burnley",
-		57:  "Watford",
-		20:  "Southampton",
-		6:   "Tottenham Hotspur",
-		36:  "Brighton",
-		4:   "Newcastle",
-		38:  "Huddersfield",
-		97:  "Cardiff City",
-		39:  "Wolves",
-		7:   "Aston Villa",
-		45:  "Norwich",
-		49:  "Sheffield United",
-		2:   "Leeds United",
-		54:  "Fulham",
-		94:  "Brentford",
-	}
-
-	Position = map[int]string{
-		1: "goalkeeper",
-		2: "defender",
-		3: "midfielder",
-		4: "forward",
-	}
+import (
+	"encoding/json"
+	"fmt"
+	"strconv"
+	"strings"
 )
 
+// (No custom unmarshal - rely on default JSON decoding into Player)
+
 type (
+	// Player represents a single player and their stats as returned by the new JSON schema.
 	Player struct {
-		Id             int      `json:"id"`
-		FirstName      string   `json:"first_name"`
-		LastName       string   `json:"last_name"`
-		SquadId        int      `json:"squad_id"`
-		Cost           int      `json:"cost"`
-		Status         string   `json:"status"`
-		InPlayStats    Stats    `json:"stats"`
-		Positions      []int    `json:"positions"`
-		Locked         int      `json:"locked"`
-		InPlayEPLStats EPLStats `json:"epl_stats"`
-		Team           string
-		Job            string
-		CostDisp       string
-		Matches        map[string]Match
+		PlayerId             string    `json:"playerId"`
+		ContestantId         string    `json:"contestantId"`
+		FirstName            string    `json:"firstName"`
+		LastName             string    `json:"lastName"`
+		ShortLastName        string    `json:"shortLastName"`
+		MatchName            string    `json:"matchName"`
+		DisplayName          string    `json:"displayName"`
+		Position             string    `json:"position"`
+		ShirtKey             string    `json:"shirtKey"`
+		ContestantFlagKey    string    `json:"contestantFlagKey"`
+		ContestantName       string    `json:"contestantName"`
+		ContestantShortName  string    `json:"contestantShortName"`
+		PercentSelected      float64   `json:"percentSelected"`
+		AvailabilityDisplay  string    `json:"availabilityDisplay"`
+		SuspensionDetails    any       `json:"suspensionDetails"`
+		InjuryDetails        any       `json:"injuryDetails"`
+		Price                float64   `json:"price"`
+		AveragePoints        float64   `json:"averagePoints"`
+		Last3Average         float64   `json:"last3Average"`
+		PpmPoints            float64   `json:"ppmPoints"`
+		BonusPoints          float64   `json:"bonusPoints"`
+		TotalPoints          int       `json:"totalPoints"`
+		Goals                int       `json:"goals"`
+		Assists              int       `json:"assists"`
+		ShotsOnTarget        int       `json:"shotsOnTarget"`
+		ChancesCreated       int       `json:"chancesCreated"`
+		Tackles              int       `json:"tackles"`
+		CleanSheet           int       `json:"cleanSheet"`
+		Saves                int       `json:"saves"`
+		GoalsConceded        int       `json:"goalsConceded"`
+		YellowCards          int       `json:"yellowCards"`
+		RedCards             int       `json:"redCards"`
+		OwnGoals             int       `json:"ownGoals"`
+		PenaltyMisses        int       `json:"penaltyMisses"`
+		PenaltySaves         int       `json:"penaltySaves"`
+		BonusPpm             float64   `json:"bonusPpm"`
+		Dribbles             int       `json:"dribbles"`
+		Crosses              int       `json:"crosses"`
+		Offsides             int       `json:"offsides"`
+		PassCompletionRate   float64   `json:"passCompletionRate"`
+		Interceptions        int       `json:"interceptions"`
+		Blocks               int       `json:"blocks"`
+		FoulsWon             int       `json:"foulsWon"`
+		FoulsMade            int       `json:"foulsMade"`
+		GoalsOutsideArea     int       `json:"goalsOutsideArea"`
+		ErrorsLeadingToGoal  int       `json:"errorsLeadingToGoal"`
+		Punches              int       `json:"punches"`
+		Claims               int       `json:"claims"`
+		KeeperSweeps         int       `json:"keeperSweeps"`
+		NextGameweekFixtures []Fixture `json:"nextGameweekFixtures"`
+		OptaPersonId         string    `json:"optaPersonId"`
+		DreamTeamName        *string   `json:"dreamTeamName"`
+		DreamTeamPrice       *float64  `json:"dreamTeamPrice"`
+		GameweekPoints       int       `json:"gameweekPoints"`
+
+		// Compatibility / rendering fields used elsewhere in the app
+		CostDisp string          `json:"-"`
+		Results  []GameWeekMatch `json:"-"`
 	}
 
-	Stats struct {
-		Prices              map[string]int `json:"prices"`
-		Scores              map[string]int `json:"scores"`
-		MatchScores         map[string]int `json:"match_scores"`
-		WeeklyScores        map[string]int `json:"weekly_scores"`
-		DraftScores         map[string]int `json:"draft_scores"`
-		RoundRank           int            `json:"round_rank"`
-		SeasonRank          int            `json:"season_rank"`
-		GamesPlayed         int            `json:"games_played"`
-		TotalPoints         int            `json:"total_points"`
-		AvgPoints           int            `json:"avg_points"`
-		HighScore           int            `json:"high_score"`
-		LowScore            int            `json:"low_score"`
-		Last3Avg            float32        `json:"last_3_avg"`
-		Last5Avg            float32        `json:"last_5_avg"`
-		Last3ThisSeasonAvg  int            `json:"last_3_this_season_avg"`
-		Last5ThisSeasonAvg  int            `json:"last_5_this_season_avg"`
-		Selections          int            `json:"selections"`
-		MonthlyTransfersIn  int            `json:"monthly_transfers_in"`
-		MonthlyTransfersOut int            `json:"monthly_transfers_out"`
-		StarManAwards       int            `json:"star_man_awards"`
-		SevenPlusRatings    int            `json:"7_plus_ratings"`
-		Goals               int            `json:"goals"`
-		Assists             int            `json:"assists"`
-		Cards               int            `json:"cards"`
-		CleanSheets         int            `json:"clean_sheets"`
-	}
-
-	EPLStats struct {
-		StarManAwards    int `json:"star_man_awards"`
-		SevenPlusRatings int `json:"7_plus_ratings"`
-		Goals            int `json:"goals"`
-		Assists          int `json:"assists"`
-		Cards            int `json:"cards"`
-		CleanSheets      int `json:"clean_sheets"`
+	// Fixture is a lightweight representation of next gameweek fixtures in the player JSON.
+	Fixture struct {
+		FixtureId         string  `json:"fixtureId"`
+		OpponentId        string  `json:"opponentId"`
+		OpponentName      string  `json:"opponentName"`
+		OpponentShortName string  `json:"opponentShortName"`
+		ContestantFlagKey string  `json:"contestantFlagKey"`
+		Status            string  `json:"status"`
+		KickoffAt         string  `json:"kickoffAt"`
+		Venue             string  `json:"venue"`
+		CompetitionName   *string `json:"competitionName"`
+		IsHome            bool    `json:"isHome"`
+		GameWeek          int     `json:"gameweek"`
 	}
 
 	PlayerFilter struct {
@@ -103,9 +92,45 @@ type (
 		Job         string
 		Cost        int
 		Points      int
-		Games       int
 		Average     int
 		ApplyFilter bool
+	}
+
+	GameWeek struct {
+		Success bool         `json:"success"`
+		Data    GameWeekData `json:"data"`
+	}
+
+	GameWeekData struct {
+		Items []GameWeekMatch `json:"items"`
+	}
+
+	GameWeekMatch struct {
+		MatchId          string         `json:"matchId"`
+		CompetitionLabel string         `json:"competitionLabel"`
+		KickoffAt        string         `json:"kickoffAt"`
+		Venue            string         `json:"venue"`
+		Status           string         `json:"status"`
+		StatusVariant    string         `json:"statusVariant"`
+		MdLabel          string         `json:"mdLabel"`
+		MdPoints         string         `json:"mdPoints"`
+		PeriodId         string         `json:"periodId"`
+		LeftTeam         GameWeekTeam   `json:"leftTeam"`
+		RightTeam        GameWeekTeam   `json:"rightTeam"`
+		Stats            []GameWeekStat `json:"stats"`
+	}
+
+	GameWeekTeam struct {
+		Name      string `json:"name"`
+		ShortName string `json:"shortName"`
+		FlagKey   string `json:"flagKey"`
+		Score     int    `json:"score"`
+	}
+
+	GameWeekStat struct {
+		Label  string `json:"label"`
+		Total  any    `json:"total"`
+		Points string `json:"points"`
 	}
 
 	MatchWeek struct {
@@ -113,7 +138,58 @@ type (
 		Status        string  `json:"status"`
 		MatchesInWeek []Match `json:"matches"`
 	}
+)
 
+func (g GameWeekStat) TotalAsInt() (int, error) {
+	switch v := g.Total.(type) {
+	case nil:
+		return 0, nil
+	case int:
+		return v, nil
+	case int8:
+		return int(v), nil
+	case int16:
+		return int(v), nil
+	case int32:
+		return int(v), nil
+	case int64:
+		return int(v), nil
+	case uint:
+		return int(v), nil
+	case uint8:
+		return int(v), nil
+	case uint16:
+		return int(v), nil
+	case uint32:
+		return int(v), nil
+	case uint64:
+		return int(v), nil
+	case float32:
+		return int(v), nil
+	case float64:
+		return int(v), nil
+	case string:
+		trimmed := strings.TrimSpace(v)
+		if trimmed == "" {
+			return 0, nil
+		}
+		parsed, err := strconv.Atoi(trimmed)
+		if err != nil {
+			return 0, fmt.Errorf("invalid GameWeekStat.Total string %q: %w", trimmed, err)
+		}
+		return parsed, nil
+	case json.Number:
+		parsed, err := strconv.Atoi(v.String())
+		if err != nil {
+			return 0, fmt.Errorf("invalid GameWeekStat.Total number %q: %w", v.String(), err)
+		}
+		return parsed, nil
+	default:
+		return 0, fmt.Errorf("GameWeekStat.Total is %T, not int or string", g.Total)
+	}
+}
+
+type (
 	Match struct {
 		Id            int        `json:"id"`
 		Gw            int        `json:"gw"`
@@ -177,29 +253,44 @@ type (
 	}
 
 	RenderedPlayer struct {
-		Id           int
-		Position     string
-		Name         string
-		Team         string
-		Cost         string
-		TotalPoints  int
-		GamesPlayed  int
-		StarMan      int
-		SevenPlus    int
-		Goals        int
-		Assists      int
-		CleanSheets  int
-		Cards        int
-		Last3Avg     float32
-		Last5Avg     float32
-		TeamFixtures []RenderedMatch
+		Id             string
+		Position       string
+		Name           string
+		Team           string
+		Cost           string
+		AveragePoints  float64
+		Last3Average   float64
+		TotalPoints    int
+		Goals          int
+		Assists        int
+		ShotsOnTarget  int
+		ChancesCreated int
+		Tackles        int
+		TeamFixtures   []RenderedMatch
+		TeamResults    []RenderedResult
 	}
 
 	RenderedMatch struct {
 		Gw          int
 		Competition string
 		Fixture     string
-		Result      string
-		Date        string
+		Venue       string
+		KickOff     string
+	}
+
+	RenderedResult struct {
+		MatchId        string
+		Competition    string
+		KickOff        string
+		HomeTeam       string
+		AwayTeam       string
+		HomeScore      int
+		AwayScore      int
+		Venue          string
+		MinutesPlayed  int
+		ShotsOnTarget  int
+		GoalsConceded  int
+		GameWeek       string
+		MatchDayPoints int
 	}
 )
