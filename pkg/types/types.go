@@ -96,6 +96,22 @@ type (
 		ApplyFilter bool
 	}
 
+	LeagueTableEntry struct {
+		Position       int     `json:"position"`
+		Team           string  `json:"team"`
+		Played         int     `json:"played"`
+		Won            int     `json:"won"`
+		Drawn          int     `json:"drawn"`
+		Lost           int     `json:"lost"`
+		GoalsFor       int     `json:"goalsFor"`
+		GoalsAgainst   int     `json:"goalsAgainst"`
+		GoalDifference int     `json:"goalDifference"`
+		Points         int     `json:"points"`
+		RecentForm     string  `json:"recentForm"`
+		FormPoints     int     `json:"formPoints"`
+		FormRate       float64 `json:"formRate"`
+	}
+
 	GameWeek struct {
 		Success bool         `json:"success"`
 		Data    GameWeekData `json:"data"`

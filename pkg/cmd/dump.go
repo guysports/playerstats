@@ -5,13 +5,33 @@ import (
 	"encoding/json"
 	"fmt"
 	"guysports/playerstats/pkg/helper"
+	"io"
 	"os"
 	"path/filepath"
 
 	"github.com/jlaffaye/ftp"
 )
 
-type Dump struct{}
+type ftpClient interface {
+	Login(user, password string) error
+	ChangeDir(path string) error
+	List(path string) ([]*ftp.Entry, error)
+	Stor(path string, r io.Reader) error
+	Quit() error
+}
+
+type Dump struct {
+	NewFTPClient func(addr string) (ftpClient, error) `kong:"-"`
+}
+
+func (d *Dump) ftpClientFactory() func(string) (ftpClient, error) {
+	if d != nil && d.NewFTPClient != nil {
+		return d.NewFTPClient
+	}
+	return func(addr string) (ftpClient, error) {
+		return ftp.Dial(addr)
+	}
+}
 
 func (d *Dump) Run(globals *Globals) error {
 	players, err := loadPlayers(globals.Source)
@@ -96,20 +116,24 @@ func (d *Dump) Run(globals *Globals) error {
 		}
 	}
 
-	return syncDataDirectory(globals)
+	return d.syncDataDirectory(globals)
 }
 
-func syncDataDirectory(globals *Globals) error {
-	ftpClient, err := ftp.Dial("ftp.guysports.co.uk:21")
+func (d *Dump) syncDataDirectory(globals *Globals) error {
+	if globals == nil || globals.FtpPassword == "" {
+		return nil
+	}
+
+	ftpConn, err := d.ftpClientFactory()("ftp.guysports.co.uk:21")
 	if err != nil {
 		return err
 	}
-	defer ftpClient.Quit()
+	defer ftpConn.Quit()
 
-	if err := ftpClient.Login("guysports@guysports.co.uk", globals.FtpPassword); err != nil {
+	if err := ftpConn.Login("guysports@guysports.co.uk", globals.FtpPassword); err != nil {
 		return err
 	}
-	if err := ftpClient.ChangeDir(globals.DataFTPDirectory); err != nil {
+	if err := ftpConn.ChangeDir(globals.DataFTPDirectory); err != nil {
 		return err
 	}
 
@@ -117,7 +141,7 @@ func syncDataDirectory(globals *Globals) error {
 	if err != nil {
 		return err
 	}
-	remoteEntries, err := ftpClient.List(".")
+	remoteEntries, err := ftpConn.List(".")
 	if err != nil {
 		return err
 	}
@@ -147,7 +171,7 @@ func syncDataDirectory(globals *Globals) error {
 		if err != nil {
 			return err
 		}
-		if err := ftpClient.Stor(entry.Name(), bytes.NewReader(localData)); err != nil {
+		if err := ftpConn.Stor(entry.Name(), bytes.NewReader(localData)); err != nil {
 			return err
 		}
 		fmt.Printf("uploaded data/%s to %s\n", entry.Name(), globals.DataFTPDirectory)

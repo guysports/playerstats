@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -10,7 +11,50 @@ import (
 	"testing"
 
 	"guysports/playerstats/pkg/types"
+
+	"github.com/jlaffaye/ftp"
 )
+
+type fakeFTPClient struct {
+	loginUser     string
+	loginPassword string
+	cwd           string
+	stored        map[string]string
+	remoteFiles   map[string]uint64
+}
+
+func (f *fakeFTPClient) Login(user, password string) error {
+	f.loginUser = user
+	f.loginPassword = password
+	return nil
+}
+
+func (f *fakeFTPClient) ChangeDir(path string) error {
+	f.cwd = path
+	return nil
+}
+
+func (f *fakeFTPClient) List(path string) ([]*ftp.Entry, error) {
+	entries := make([]*ftp.Entry, 0, len(f.remoteFiles))
+	for name, size := range f.remoteFiles {
+		entries = append(entries, &ftp.Entry{Name: name, Size: size, Type: ftp.EntryTypeFile})
+	}
+	return entries, nil
+}
+
+func (f *fakeFTPClient) Stor(path string, r io.Reader) error {
+	if f.stored == nil {
+		f.stored = map[string]string{}
+	}
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return err
+	}
+	f.stored[path] = string(data)
+	return nil
+}
+
+func (f *fakeFTPClient) Quit() error { return nil }
 
 func TestDumpRun(t *testing.T) {
 	t.Chdir(t.TempDir())
@@ -51,13 +95,35 @@ func TestDumpRun(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if err := (&Dump{}).Run(&Globals{
+	fakeFTP := &fakeFTPClient{remoteFiles: map[string]uint64{}, stored: map[string]string{}}
+
+	if err := (&Dump{NewFTPClient: func(addr string) (ftpClient, error) {
+		if addr != "ftp.guysports.co.uk:21" {
+			return nil, fmt.Errorf("unexpected ftp address: %s", addr)
+		}
+		return fakeFTP, nil
+	}}).Run(&Globals{
 		Source:           source,
 		MatchesSource:    filepath.Join(fixtureDir, "%s.json"),
 		MatchStatsSource: server.URL + "/matches/%s/stats",
 		DTToken:          "test-token",
+		FtpPassword:      "secret",
+		DataFTPDirectory: "/subdomains/playerinsights/data",
 	}); err != nil {
 		t.Fatalf("Dump.Run() returned an error: %v", err)
+	}
+
+	if fakeFTP.loginUser != "guysports@guysports.co.uk" {
+		t.Fatalf("FTP login user = %q, want %q", fakeFTP.loginUser, "guysports@guysports.co.uk")
+	}
+	if fakeFTP.loginPassword != "secret" {
+		t.Fatalf("FTP login password = %q, want %q", fakeFTP.loginPassword, "secret")
+	}
+	if fakeFTP.cwd != "/subdomains/playerinsights/data" {
+		t.Fatalf("FTP cwd = %q, want %q", fakeFTP.cwd, "/subdomains/playerinsights/data")
+	}
+	if _, ok := fakeFTP.stored["player-2-match-result-stats.json"]; !ok {
+		t.Fatalf("uploaded stats were not sent to FTP: %+v", fakeFTP.stored)
 	}
 
 	output, err := os.ReadFile(filepath.Join("data", "players.json"))

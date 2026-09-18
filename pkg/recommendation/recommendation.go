@@ -26,37 +26,46 @@ type FixtureAssessment struct {
 	Difficulty       string
 	OpponentStrength float64
 	RelativeStrength float64
+	OpponentPosition int
+	OpponentForm     string
+	OpponentFormRate float64
 }
 
 // Rank returns the strongest available players for the next gameweek.
 // It does not call an LLM and produces the same results for the same input.
 func Rank(players []types.Player, limit int) []Recommendation {
-	return rank(players, limit)
+	return rank(players, nil, limit)
 }
 
 // RankWithResults ranks players using the per-player match records loaded from
 // the UUID-matches.json files, including appearance minutes.
 func RankWithResults(players []types.Player, results map[string][]types.GameWeekMatch, limit int) []Recommendation {
+	return RankWithTable(players, results, nil, limit)
+}
+
+// RankWithTable includes BBC league position, goal difference, points rate,
+// and recent form when assessing team strength and fixture difficulty.
+func RankWithTable(players []types.Player, results map[string][]types.GameWeekMatch, table []types.LeagueTableEntry, limit int) []Recommendation {
 	enriched := make([]types.Player, len(players))
 	copy(enriched, players)
 	for i := range enriched {
 		enriched[i].Results = results[enriched[i].PlayerId]
 	}
-	return rank(enriched, limit)
+	return rank(enriched, table, limit)
 }
 
-func rank(players []types.Player, limit int) []Recommendation {
+func rank(players []types.Player, table []types.LeagueTableEntry, limit int) []Recommendation {
 	if limit <= 0 {
 		return []Recommendation{}
 	}
 
-	teamStrengths := buildTeamStrengths(players)
+	teamStrengths := buildTeamStrengths(players, table)
 	recommendations := make([]Recommendation, 0, len(players))
 	for _, player := range players {
 		if unavailable(player) {
 			continue
 		}
-		recommendations = append(recommendations, score(player, teamStrengths))
+		recommendations = append(recommendations, score(player, teamStrengths, table))
 	}
 
 	sort.SliceStable(recommendations, func(i, j int) bool {
@@ -71,7 +80,7 @@ func rank(players []types.Player, limit int) []Recommendation {
 	return recommendations[:limit]
 }
 
-func score(player types.Player, teamStrengths map[string]float64) Recommendation {
+func score(player types.Player, teamStrengths map[string]float64, table []types.LeagueTableEntry) Recommendation {
 	appearancePoints := appearanceScore(player.Results)
 	score := allPositionScore(player) + bonusScore(player.PpmPoints) + appearancePoints
 	opportunity := "all-position scoring"
@@ -103,7 +112,7 @@ func score(player types.Player, teamStrengths map[string]float64) Recommendation
 		}
 	}
 
-	fixtureAssessments := assessFixtures(player, teamStrengths)
+	fixtureAssessments := assessFixtures(player, teamStrengths, table)
 	fixtureCount := len(fixtureAssessments)
 	if fixtureCount > 0 {
 		score += float64(fixtureCount - 1)
@@ -117,7 +126,7 @@ func score(player types.Player, teamStrengths map[string]float64) Recommendation
 	return Recommendation{Player: player, Score: score, Opportunity: opportunity, Reasons: reasons, FixtureCount: fixtureCount, Fixtures: fixtureAssessments}
 }
 
-func buildTeamStrengths(players []types.Player) map[string]float64 {
+func buildTeamStrengths(players []types.Player, table []types.LeagueTableEntry) map[string]float64 {
 	byTeam := make(map[string][]types.Player)
 	for _, player := range players {
 		byTeam[player.ContestantId] = append(byTeam[player.ContestantId], player)
@@ -136,11 +145,30 @@ func buildTeamStrengths(players []types.Player) map[string]float64 {
 		if len(squad) > 0 {
 			strengths[teamID] /= float64(len(squad))
 		}
+		if tableEntry, ok := tableForTeam(table, squad[0].ContestantName); ok {
+			positionScore := float64(21-tableEntry.Position) / 20 * 100
+			pointsRate := 0.0
+			if tableEntry.Played > 0 {
+				pointsRate = float64(tableEntry.Points) / float64(tableEntry.Played*3) * 100
+			}
+			goalDifferenceRate := 50.0
+			if tableEntry.Played > 0 {
+				goalDifferenceRate += float64(tableEntry.GoalDifference) / float64(tableEntry.Played) * 10
+			}
+			if goalDifferenceRate < 0 {
+				goalDifferenceRate = 0
+			}
+			if goalDifferenceRate > 100 {
+				goalDifferenceRate = 100
+			}
+			formScore := tableEntry.FormRate * 100
+			strengths[teamID] = positionScore*0.5 + pointsRate*0.15 + goalDifferenceRate*0.15 + formScore*0.2
+		}
 	}
 	return strengths
 }
 
-func assessFixtures(player types.Player, teamStrengths map[string]float64) []FixtureAssessment {
+func assessFixtures(player types.Player, teamStrengths map[string]float64, table []types.LeagueTableEntry) []FixtureAssessment {
 	assessments := make([]FixtureAssessment, 0, len(player.NextGameweekFixtures))
 	ownStrength := teamStrengths[player.ContestantId]
 	for _, fixture := range player.NextGameweekFixtures {
@@ -159,12 +187,28 @@ func assessFixtures(player types.Player, teamStrengths map[string]float64) []Fix
 				difficulty = "difficult"
 			}
 		}
+		tableEntry, _ := tableForTeam(table, fixture.OpponentName)
 		assessments = append(assessments, FixtureAssessment{
 			Opponent: fixture.OpponentName, Venue: venue, Gameweek: fixture.GameWeek,
 			Difficulty: difficulty, OpponentStrength: opponentStrength, RelativeStrength: relative,
+			OpponentPosition: tableEntry.Position, OpponentForm: tableEntry.RecentForm, OpponentFormRate: tableEntry.FormRate,
 		})
 	}
 	return assessments
+}
+
+func tableForTeam(table []types.LeagueTableEntry, name string) (types.LeagueTableEntry, bool) {
+	target := normalizeTeamName(name)
+	for _, entry := range table {
+		if normalizeTeamName(entry.Team) == target {
+			return entry, true
+		}
+	}
+	return types.LeagueTableEntry{}, false
+}
+
+func normalizeTeamName(name string) string {
+	return strings.ToLower(strings.NewReplacer(" fc", "", " afc", "", "&", "and", ".", "").Replace(strings.TrimSpace(name)))
 }
 
 func fixtureAdjustment(fixture FixtureAssessment) float64 {

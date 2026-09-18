@@ -1,20 +1,27 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"guysports/playerstats/pkg/betfair"
+	"guysports/playerstats/pkg/helper"
 	"guysports/playerstats/pkg/ollama"
 	"guysports/playerstats/pkg/recommendation"
 	"guysports/playerstats/pkg/types"
 )
 
 type Recommend struct {
-	Limit   int    `help:"Number of recommendations to return" default:"5"`
-	DataDir string `help:"Directory containing players.json and match files" default:"data"`
+	Limit         int    `help:"Number of recommendations to return" default:"5"`
+	DataDir       string `help:"Directory containing players.json and match files" default:"data"`
+	ModelOutput   string `help:"Filename to write the recommendation JSON payload to before submitting to Ollama" default:"model.json"`
+	ModelOnly     bool   `help:"Write the recommendation JSON payload and exit without sending it to Ollama"`
+	Print         bool   `help:"Submit the existing model output file to Ollama without regenerating it"`
+	JSONLoginPath string `help:"Path to the Betfair login JSON file" env:"BETFAIR_LOGIN_PATH" default:"" name:"json-login-path"`
 }
 
 type recommendationInput struct {
@@ -28,16 +35,46 @@ type recommendationInput struct {
 }
 
 type fixtureInput struct {
-	Opponent         string  `json:"opponent"`
-	Venue            string  `json:"venue"`
-	Gameweek         int     `json:"gameweek"`
-	Kickoff          string  `json:"kickoff"`
-	Difficulty       string  `json:"difficulty"`
-	OpponentStrength float64 `json:"opponent_strength"`
-	RelativeStrength float64 `json:"relative_strength"`
+	Opponent         string            `json:"opponent"`
+	Venue            string            `json:"venue"`
+	Gameweek         int               `json:"gameweek"`
+	Kickoff          string            `json:"kickoff"`
+	Difficulty       string            `json:"difficulty"`
+	OpponentStrength float64           `json:"opponent_strength"`
+	RelativeStrength float64           `json:"relative_strength"`
+	OpponentPosition int               `json:"opponent_position"`
+	OpponentForm     string            `json:"opponent_form"`
+	OpponentFormRate float64           `json:"opponent_form_rate"`
+	BetfairOdds      *betfairOddsInput `json:"betfair_odds,omitempty"`
+}
+
+type betfairOddsInput struct {
+	Home float64 `json:"home"`
+	Draw float64 `json:"draw"`
+	Away float64 `json:"away"`
 }
 
 func (r *Recommend) Run(globals *Globals) error {
+	if r.DataDir == "" {
+		r.DataDir = "data"
+	}
+	if r.ModelOutput == "" {
+		r.ModelOutput = "model.json"
+	}
+
+	if r.Print {
+		return r.printExisting(globals)
+	}
+
+	if r.JSONLoginPath != "" {
+		if _, err := os.Stat(r.JSONLoginPath); err != nil {
+			return fmt.Errorf("betfair login json path %q is not accessible: %w", r.JSONLoginPath, err)
+		}
+		if globals.BetfairAppKey == "" {
+			fmt.Printf("warning: BETFAIR_APP_KEY is not set; the login JSON path is configured but the app key is still required for Betfair auth\n")
+		}
+	}
+
 	players, err := readPlayers(r.DataDir)
 	if err != nil {
 		return err
@@ -46,8 +83,25 @@ func (r *Recommend) Run(globals *Globals) error {
 	if err != nil {
 		return err
 	}
+	var table []types.LeagueTableEntry
+	if globals.LeagueTableURL != "" {
+		table, err = loadLeagueTable(globals.LeagueTableURL)
+		if err != nil {
+			fmt.Printf("warning: league table unavailable (%v); continuing without table context\n", err)
+			table = nil
+		}
+	}
 
-	recommendations := recommendation.RankWithResults(players, results, r.Limit)
+	var betfairClient *betfair.Client
+	if r.JSONLoginPath != "" {
+		betfairClient, err = betfair.NewClient(r.JSONLoginPath, globals.BetfairAppKey)
+		if err != nil {
+			fmt.Printf("warning: betfair client unavailable (%v); continuing without odds\n", err)
+			betfairClient = nil
+		}
+	}
+
+	recommendations := recommendation.RankWithTable(players, results, table, r.Limit)
 	for index, item := range recommendations {
 		fmt.Printf("%d. %s (%s, %s) score %.1f: %s | fixtures: %s\n", index+1, item.Player.DisplayName, item.Player.Position, item.Player.ContestantName, item.Score, strings.Join(item.Reasons, "; "), formatRecommendationFixtures(item.Fixtures))
 	}
@@ -56,7 +110,19 @@ func (r *Recommend) Run(globals *Globals) error {
 	for _, item := range recommendations {
 		fixtures := make([]fixtureInput, 0, len(item.Player.NextGameweekFixtures))
 		for _, fixture := range item.Fixtures {
-			fixtures = append(fixtures, fixtureInput{Opponent: fixture.Opponent, Venue: fixture.Venue, Gameweek: fixture.Gameweek, Difficulty: fixture.Difficulty, OpponentStrength: fixture.OpponentStrength, RelativeStrength: fixture.RelativeStrength})
+			fixtureInputData := fixtureInput{Opponent: fixture.Opponent, Venue: fixture.Venue, Gameweek: fixture.Gameweek, Difficulty: fixture.Difficulty, OpponentStrength: fixture.OpponentStrength, RelativeStrength: fixture.RelativeStrength, OpponentPosition: fixture.OpponentPosition, OpponentForm: fixture.OpponentForm, OpponentFormRate: fixture.OpponentFormRate}
+			if betfairClient != nil {
+				homeTeam, awayTeam := item.Player.ContestantName, fixture.Opponent
+				if fixture.Venue == "away" {
+					homeTeam, awayTeam = fixture.Opponent, item.Player.ContestantName
+				}
+				if odds, err := betfairClient.MatchOdds(homeTeam, awayTeam); err == nil {
+					fixtureInputData.BetfairOdds = &betfairOddsInput{Home: odds.Home, Draw: odds.Draw, Away: odds.Away}
+				} else {
+					fmt.Printf("warning: betfair odds unavailable for %s vs %s (%v)\n", homeTeam, awayTeam, err)
+				}
+			}
+			fixtures = append(fixtures, fixtureInputData)
 		}
 		promptData = append(promptData, recommendationInput{
 			Name: item.Player.DisplayName, Position: item.Player.Position, Team: item.Player.ContestantName,
@@ -68,12 +134,46 @@ func (r *Recommend) Run(globals *Globals) error {
 		return err
 	}
 
+	modelPath := filepath.Join(r.DataDir, r.ModelOutput)
+	if err := os.WriteFile(modelPath, prompt, 0644); err != nil {
+		return fmt.Errorf("write model payload to %s: %w", modelPath, err)
+	}
+	fmt.Printf("Model payload written to %s\n", modelPath)
+	if r.ModelOnly {
+		return nil
+	}
+
 	explanation, err := ollama.NewClient(globals.OllamaURL, globals.OllamaModel, globals.OllamaTimeout).Explain(string(prompt))
 	if err != nil {
 		return fmt.Errorf("deterministic recommendations succeeded but Ollama explanation failed: %w", err)
 	}
 	fmt.Printf("\nOllama explanation:\n%s\n", explanation)
 	return nil
+}
+
+// printExisting submits an already-generated model output file to Ollama
+// without recomputing recommendations, odds, etc.
+func (r *Recommend) printExisting(globals *Globals) error {
+	modelPath := filepath.Join(r.DataDir, r.ModelOutput)
+	prompt, err := os.ReadFile(modelPath)
+	if err != nil {
+		return fmt.Errorf("read model payload from %s: %w", modelPath, err)
+	}
+
+	explanation, err := ollama.NewClient(globals.OllamaURL, globals.OllamaModel, globals.OllamaTimeout).Explain(string(prompt))
+	if err != nil {
+		return fmt.Errorf("ollama explanation failed: %w", err)
+	}
+	fmt.Printf("\nOllama explanation:\n%s\n", explanation)
+	return nil
+}
+
+func loadLeagueTable(source string) ([]types.LeagueTableEntry, error) {
+	data, err := helper.GetJSON(source)
+	if err != nil {
+		return nil, err
+	}
+	return helper.ParsePremierLeagueTable(bytes.NewReader(data))
 }
 
 func formatFixtures(fixtures []types.Fixture) string {

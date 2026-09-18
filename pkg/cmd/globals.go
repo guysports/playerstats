@@ -13,4 +13,6 @@ type Globals struct {
 	OllamaURL        string        `env:"OLLAMA_URL" envDefault:"http://localhost:11434"`
 	OllamaModel      string        `env:"OLLAMA_MODEL" envDefault:"llama3.1:8b"`
 	OllamaTimeout    time.Duration `env:"OLLAMA_TIMEOUT" envDefault:"10m"`
+	LeagueTableURL   string        `env:"LEAGUE_TABLE_URL" envDefault:"https://www.bbc.co.uk/sport/football/premier-league/table"`
+	BetfairAppKey    string        `env:"BETFAIR_APP_KEY"`
 }
