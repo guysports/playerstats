@@ -25,6 +25,7 @@ type Recommend struct {
 }
 
 type recommendationInput struct {
+	PlayerId    string         `json:"player_id"`
 	Name        string         `json:"name"`
 	Position    string         `json:"position"`
 	Team        string         `json:"team"`
@@ -139,7 +140,7 @@ func (r *Recommend) Run(globals *Globals) error {
 			fixtures = append(fixtures, fixtureInputData)
 		}
 		promptData = append(promptData, recommendationInput{
-			Name: item.Player.DisplayName, Position: item.Player.Position, Team: item.Player.ContestantName,
+			PlayerId: item.Player.PlayerId, Name: item.Player.DisplayName, Position: item.Player.Position, Team: item.Player.ContestantName,
 			Score: item.Score, Opportunity: item.Opportunity, Reasons: item.Reasons, Fixtures: fixtures,
 		})
 	}

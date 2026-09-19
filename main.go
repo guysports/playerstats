@@ -12,6 +12,7 @@ var cli struct {
 	Player    cmd.Player    `cmd:"" help:"Display player scores from last season"`
 	Dump      cmd.Dump      `cmd:"" help:"Dump all player data to data/players.json"`
 	Recommend cmd.Recommend `cmd:"" help:"Rank upcoming player opportunities and explain them with Ollama"`
+	Compare   cmd.Compare   `cmd:"" help:"Compare a model-only recommendation file against actual gameweek results"`
 }
 
 func main() {
