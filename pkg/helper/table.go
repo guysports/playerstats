@@ -1,148 +1,143 @@
 package helper
 
 import (
+	"encoding/json"
 	"fmt"
-	"io"
-	"strconv"
+	"sort"
 	"strings"
+	"time"
 
 	"guysports/playerstats/pkg/types"
-
-	"golang.org/x/net/html"
 )
 
-// ParsePremierLeagueTable converts the BBC Premier League HTML table into
-// stable typed rows for the recommendation engine.
-func ParsePremierLeagueTable(reader io.Reader) ([]types.LeagueTableEntry, error) {
-	document, err := html.Parse(reader)
-	if err != nil {
-		return nil, err
-	}
+const recentFormMatches = 6
 
-	var rows []types.LeagueTableEntry
-	var visit func(*html.Node)
-	visit = func(node *html.Node) {
-		if node.Type == html.ElementNode && node.Data == "tr" {
-			if entry, ok := parseTableRow(node); ok {
-				rows = append(rows, entry)
-			}
-		}
-		for child := node.FirstChild; child != nil; child = child.NextSibling {
-			visit(child)
-		}
-	}
-	visit(document)
-	if len(rows) == 0 {
-		return nil, fmt.Errorf("premier league table not found")
-	}
-	for i := range rows {
-		if rows[i].Position == 0 {
-			rows[i].Position = i + 1
-		}
-	}
-	return rows, nil
+// footballDataStandingsResponse mirrors the payload returned by the
+// football-data.org /competitions/{id}/standings endpoint.
+type footballDataStandingsResponse struct {
+	Standings []struct {
+		Type  string `json:"type"`
+		Table []struct {
+			Position int `json:"position"`
+			Team     struct {
+				Name string `json:"name"`
+			} `json:"team"`
+			PlayedGames    int `json:"playedGames"`
+			Won            int `json:"won"`
+			Draw           int `json:"draw"`
+			Lost           int `json:"lost"`
+			Points         int `json:"points"`
+			GoalsFor       int `json:"goalsFor"`
+			GoalsAgainst   int `json:"goalsAgainst"`
+			GoalDifference int `json:"goalDifference"`
+		} `json:"table"`
+	} `json:"standings"`
 }
 
-func parseTableRow(row *html.Node) (types.LeagueTableEntry, bool) {
-	cells := make([]*html.Node, 0, 12)
-	for child := row.FirstChild; child != nil; child = child.NextSibling {
-		if child.Type == html.ElementNode && (child.Data == "td" || child.Data == "th") {
-			cells = append(cells, child)
-		}
+// ParseFootballDataStandings converts the football-data.org standings
+// payload into typed league table rows. The free API tier always returns a
+// null "form" field on this endpoint, so recent form is left empty here;
+// call ApplyRecentForm with a finished-matches payload to populate it.
+func ParseFootballDataStandings(data []byte) ([]types.LeagueTableEntry, error) {
+	var payload footballDataStandingsResponse
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return nil, fmt.Errorf("parse football-data standings: %w", err)
 	}
-	if len(cells) < 9 {
-		return types.LeagueTableEntry{}, false
-	}
-
-	teamIndex := 0
-	valueStart := 1
-	position := 0
-	if positionCandidate, err := parseTableInt(nodeText(cells[0])); err == nil && positionCandidate >= 1 && positionCandidate <= 20 {
-		position = positionCandidate
-		teamIndex = 1
-		valueStart = 2
-	}
-	if teamIndex >= len(cells) {
-		return types.LeagueTableEntry{}, false
-	}
-	team := nodeText(cells[teamIndex])
-	if team == "" {
-		return types.LeagueTableEntry{}, false
-	}
-
-	statCells := cells[valueStart:]
-	if len(statCells) < 8 {
-		return types.LeagueTableEntry{}, false
-	}
-	values := make([]int, 0, 8)
-	for _, cell := range statCells[:8] {
-		value, err := parseTableInt(nodeText(cell))
-		if err != nil {
-			return types.LeagueTableEntry{}, false
-		}
-		values = append(values, value)
-	}
-
-	entry := types.LeagueTableEntry{
-		Position: position,
-		Team:     team,
-		Played:   values[0], Won: values[1], Drawn: values[2], Lost: values[3],
-		GoalsFor: values[4], GoalsAgainst: values[5], GoalDifference: values[6], Points: values[7],
-	}
-	if len(statCells) > 8 {
-		entry.RecentForm, entry.FormPoints, entry.FormRate = parseForm(nodeText(statCells[8]))
-	}
-	return entry, true
-}
-
-func parseForm(value string) (string, int, float64) {
-	results := make([]string, 0, 6)
-	for _, token := range strings.Fields(strings.ToUpper(value)) {
-		token = strings.Trim(token, "[](),|/")
-		if token == "W" || token == "D" || token == "L" {
-			results = append(results, token)
-		}
-	}
-	points := 0
-	for _, result := range results {
-		switch result {
-		case "W":
-			points += 3
-		case "D":
-			points++
-		}
-	}
-	rate := 0.0
-	if len(results) > 0 {
-		rate = float64(points) / float64(len(results)*3)
-	}
-	return strings.Join(results, ""), points, rate
-}
-
-func parseTableInt(value string) (int, error) {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return 0, fmt.Errorf("empty table value")
-	}
-	if value == "-" {
-		return 0, nil
-	}
-	for index, character := range value {
-		if (character == '-' && index == 0) || (character >= '0' && character <= '9') {
+	for _, standing := range payload.Standings {
+		if standing.Type != "TOTAL" {
 			continue
 		}
-		return 0, fmt.Errorf("invalid table value %q", value)
+		entries := make([]types.LeagueTableEntry, 0, len(standing.Table))
+		for _, row := range standing.Table {
+			entries = append(entries, types.LeagueTableEntry{
+				Position: row.Position, Team: row.Team.Name,
+				Played: row.PlayedGames, Won: row.Won, Drawn: row.Draw, Lost: row.Lost,
+				GoalsFor: row.GoalsFor, GoalsAgainst: row.GoalsAgainst,
+				GoalDifference: row.GoalDifference, Points: row.Points,
+			})
+		}
+		return entries, nil
 	}
-	return strconv.Atoi(value)
+	return nil, fmt.Errorf("no TOTAL standings found in football-data response")
 }
 
-func nodeText(node *html.Node) string {
-	if node.Type == html.TextNode {
-		return node.Data
+// footballDataMatchesResponse mirrors the payload returned by the
+// football-data.org /competitions/{id}/matches endpoint.
+type footballDataMatchesResponse struct {
+	Matches []struct {
+		UtcDate  string `json:"utcDate"`
+		Status   string `json:"status"`
+		HomeTeam struct {
+			Name string `json:"name"`
+		} `json:"homeTeam"`
+		AwayTeam struct {
+			Name string `json:"name"`
+		} `json:"awayTeam"`
+		Score struct {
+			Winner string `json:"winner"`
+		} `json:"score"`
+	} `json:"matches"`
+}
+
+// ApplyRecentForm derives each team's last six results (oldest first) from a
+// football-data.org finished-matches payload and fills in RecentForm,
+// FormPoints and FormRate on the matching entries, since the standings
+// endpoint itself does not report form on the free API tier.
+func ApplyRecentForm(entries []types.LeagueTableEntry, matchesData []byte) error {
+	var payload footballDataMatchesResponse
+	if err := json.Unmarshal(matchesData, &payload); err != nil {
+		return fmt.Errorf("parse football-data matches: %w", err)
 	}
-	parts := make([]string, 0, 2)
-	for child := node.FirstChild; child != nil; child = child.NextSibling {
-		parts = append(parts, nodeText(child))
+
+	type result struct {
+		date   time.Time
+		letter string
 	}
-	return strings.Join(strings.Fields(strings.Join(parts, " ")), " ")
+	resultsByTeam := make(map[string][]result)
+	for _, match := range payload.Matches {
+		if match.Status != "FINISHED" {
+			continue
+		}
+		date, err := time.Parse(time.RFC3339, match.UtcDate)
+		if err != nil {
+			continue
+		}
+		homeLetter, awayLetter := "D", "D"
+		switch match.Score.Winner {
+		case "HOME_TEAM":
+			homeLetter, awayLetter = "W", "L"
+		case "AWAY_TEAM":
+			homeLetter, awayLetter = "L", "W"
+		}
+		resultsByTeam[match.HomeTeam.Name] = append(resultsByTeam[match.HomeTeam.Name], result{date, homeLetter})
+		resultsByTeam[match.AwayTeam.Name] = append(resultsByTeam[match.AwayTeam.Name], result{date, awayLetter})
+	}
+
+	for i := range entries {
+		results, ok := resultsByTeam[entries[i].Team]
+		if !ok {
+			continue
+		}
+		sort.Slice(results, func(a, b int) bool { return results[a].date.Before(results[b].date) })
+		if len(results) > recentFormMatches {
+			results = results[len(results)-recentFormMatches:]
+		}
+		letters := make([]string, 0, len(results))
+		points := 0
+		for _, r := range results {
+			letters = append(letters, r.letter)
+			switch r.letter {
+			case "W":
+				points += 3
+			case "D":
+				points++
+			}
+		}
+		entries[i].RecentForm = strings.Join(letters, "")
+		entries[i].FormPoints = points
+		if len(letters) > 0 {
+			entries[i].FormRate = float64(points) / float64(len(letters)*3)
+		}
+	}
+	return nil
 }

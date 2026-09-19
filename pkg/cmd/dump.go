@@ -21,6 +21,7 @@ type ftpClient interface {
 }
 
 type Dump struct {
+	GW           int                                  `help:"Current gameweek number; fetches its fixtures to data/gameweek_<gw>.json so they aren't lost from nextGameweekFixtures once the gameweek rolls over" name:"gw"`
 	NewFTPClient func(addr string) (ftpClient, error) `kong:"-"`
 }
 
@@ -31,6 +32,22 @@ func (d *Dump) ftpClientFactory() func(string) (ftpClient, error) {
 	return func(addr string) (ftpClient, error) {
 		return ftp.Dial(addr)
 	}
+}
+
+func (d *Dump) dumpGameweekFixtures(globals *Globals) error {
+	fixtures, err := helper.GetJSONWithHeaders(
+		fmt.Sprintf(globals.GameweekMatchesSource, d.GW),
+		map[string]string{"Authorization": "Bearer " + globals.DTToken},
+	)
+	if err != nil {
+		return err
+	}
+	var formatted bytes.Buffer
+	if err := json.Indent(&formatted, fixtures, "", "  "); err != nil {
+		return err
+	}
+	formatted.WriteByte('\n')
+	return os.WriteFile(filepath.Join("data", "currentgameweek.json"), formatted.Bytes(), 0644)
 }
 
 func (d *Dump) Run(globals *Globals) error {
@@ -49,6 +66,12 @@ func (d *Dump) Run(globals *Globals) error {
 	}
 	if err := os.WriteFile(filepath.Join("data", "players.json"), append(data, '\n'), 0644); err != nil {
 		return err
+	}
+
+	if d.GW > 0 {
+		if err := d.dumpGameweekFixtures(globals); err != nil {
+			return err
+		}
 	}
 
 	for _, player := range players {

@@ -156,3 +156,61 @@ func TestRecommendRunReportsOllamaFailure(t *testing.T) {
 		t.Fatalf("Recommend.Run() error = %v, want Ollama explanation failure", err)
 	}
 }
+
+func TestRecommendRunUsesCurrentGameweekFixturesAndOdds(t *testing.T) {
+	dataDir := t.TempDir()
+	players := []types.Player{
+		{
+			PlayerId: "player-1", DisplayName: "Top Player", Position: "MID", ContestantName: "Test FC",
+			Last3Average: 8, Goals: 2,
+			// Stale: players.json already rolled over to a fixture that isn't
+			// the imminent one; currentgameweek.json should take priority.
+			NextGameweekFixtures: []types.Fixture{{OpponentName: "Stale FC", IsHome: false}},
+		},
+	}
+	playersData, err := json.Marshal(players)
+	if err != nil {
+		t.Fatalf("json.Marshal() returned an error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dataDir, "players.json"), playersData, 0644); err != nil {
+		t.Fatalf("os.WriteFile() returned an error: %v", err)
+	}
+	matches := `{"data":{"items":[{"matchId":"match-1","stats":[{"label":"Minutes played","total":90}]}]}}`
+	if err := os.WriteFile(filepath.Join(dataDir, "player-1-matches.json"), []byte(matches), 0644); err != nil {
+		t.Fatalf("os.WriteFile() returned an error: %v", err)
+	}
+	currentGameweek := `{"success":true,"data":{"matches":[{
+		"id":"match-cur","homeContestant":{"id":"team-1","name":"Test FC","shortName":"Test"},
+		"awayContestant":{"id":"team-2","name":"Other FC","shortName":"Other"},
+		"kickoffAt":"2026-09-19T14:00:00.000Z","status":"fixture","gameweek":5,
+		"odds":{"homePrice":"1.80","drawPrice":"3.50","awayPrice":"4.20"}
+	}]}}`
+	if err := os.WriteFile(filepath.Join(dataDir, "currentgameweek.json"), []byte(currentGameweek), 0644); err != nil {
+		t.Fatalf("os.WriteFile() returned an error: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprint(w, `{"message":{"content":"Top Player is the leading recommendation."}}`)
+	}))
+	defer server.Close()
+
+	err = (&Recommend{Limit: 1, DataDir: dataDir}).Run(&Globals{OllamaURL: server.URL, OllamaModel: "test-model"})
+	if err != nil {
+		t.Fatalf("Recommend.Run() returned an error: %v", err)
+	}
+
+	modelPath := filepath.Join(dataDir, "model.json")
+	content, err := os.ReadFile(modelPath)
+	if err != nil {
+		t.Fatalf("os.ReadFile(%q) returned an error: %v", modelPath, err)
+	}
+	if strings.Contains(string(content), "Stale FC") {
+		t.Fatalf("model.json used the stale nextGameweekFixtures entry: %s", string(content))
+	}
+	if !strings.Contains(string(content), "Other FC") {
+		t.Fatalf("model.json missing current gameweek opponent: %s", string(content))
+	}
+	if !strings.Contains(string(content), `"home": 1.8`) {
+		t.Fatalf("model.json missing embedded betfair odds from currentgameweek.json: %s", string(content))
+	}
+}

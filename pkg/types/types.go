@@ -96,6 +96,42 @@ type (
 		ApplyFilter bool
 	}
 
+	// CurrentGameweekPayload is the response from the gameweek matches endpoint,
+	// dumped to data/currentgameweek.json, used to fill the gap left by
+	// NextGameweekFixtures moving on before the current gameweek is played.
+	CurrentGameweekPayload struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Matches []CurrentGameweekMatch `json:"matches"`
+		} `json:"data"`
+	}
+
+	CurrentGameweekMatch struct {
+		ID                     string                    `json:"id"`
+		TournamentCalendarName string                    `json:"tournamentCalendarName"`
+		HomeContestant         CurrentGameweekContestant `json:"homeContestant"`
+		AwayContestant         CurrentGameweekContestant `json:"awayContestant"`
+		KickoffAt              string                    `json:"kickoffAt"`
+		Status                 string                    `json:"status"`
+		HomeScore              *int                      `json:"homeScore"`
+		AwayScore              *int                      `json:"awayScore"`
+		Gameweek               int                       `json:"gameweek"`
+		Odds                   *CurrentGameweekOdds      `json:"odds"`
+	}
+
+	CurrentGameweekContestant struct {
+		ID                string `json:"id"`
+		Name              string `json:"name"`
+		ShortName         string `json:"shortName"`
+		ContestantFlagKey string `json:"contestantFlagKey"`
+	}
+
+	CurrentGameweekOdds struct {
+		HomePrice string `json:"homePrice"`
+		DrawPrice string `json:"drawPrice"`
+		AwayPrice string `json:"awayPrice"`
+	}
+
 	LeagueTableEntry struct {
 		Position       int     `json:"position"`
 		Team           string  `json:"team"`

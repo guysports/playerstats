@@ -5,6 +5,7 @@ const state = {
     openTeam: null,
     openPlayer: null,
     teamStats: {},
+    currentGameweek: [],
 };
 
 const teamList = document.querySelector('#team-list');
@@ -58,6 +59,10 @@ const rankingMetrics = {
     average: 'averagePoints',
     'average points': 'averagePoints',
     averagepoints: 'averagePoints',
+    'last 3 average': 'last3Average',
+    'last3 average': 'last3Average',
+    last3average: 'last3Average',
+    'last three average': 'last3Average',
     'pass completion rate': 'passCompletionRate',
     passcompletionrate: 'passCompletionRate',
     'yellow cards': 'yellowCards',
@@ -74,6 +79,12 @@ const rankingMetrics = {
     goalsoutsidearea: 'goalsOutsideArea',
     'errors leading to goal': 'errorsLeadingToGoal',
     errorsleadingtogoal: 'errorsLeadingToGoal',
+    price: 'price',
+    'percent selected': 'percentSelected',
+    percentselected: 'percentSelected',
+    'selected by': 'percentSelected',
+    'gameweek points': 'gameweekPoints',
+    gameweekpoints: 'gameweekPoints',
 };
 
 function parseRankingQuery(query) {
@@ -208,6 +219,7 @@ function renderPlayerSummary(player) {
   ];
   if (isGoalkeeper) ppmMetrics.push(metric('Claims', player.claims), metric('Punches', player.punches), metric('Keeper sweeps', player.keeperSweeps));
   return `${group('Player Summary', summaryMetrics)}${group('Scoring Metrics', scoringMetrics)}${group('PPM Metrics', ppmMetrics)}
+  <div class="detail-section"><h3>Current gameweek fixture</h3><div class="fixture-list">${renderCurrentGameweekFixtures(player.contestantName)}</div></div>
   <div class="detail-section"><h3>Next fixtures</h3><div class="fixture-list">${renderFixtures(player.nextGameweekFixtures)}</div></div>
   <div class="detail-section match-history"><h3>Match history</h3><div class="loading">Loading match history...</div></div>`;
 }
@@ -260,6 +272,35 @@ function renderFixtures(fixtures = []) {
   return fixtures.map((fixture) => `<div class="fixture"><span>${fixture.isHome ? 'vs' : '@'} ${escapeHtml(fixture.opponentShortName || fixture.opponentName)}</span><span class="match-meta">GW ${fixture.gameweek} / ${new Date(fixture.kickoffAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}</span></div>`).join('');
 }
 
+function currentGameweekFixturesForTeam(teamName) {
+  if (!teamName) return [];
+  return state.currentGameweek
+    .filter((match) => match.homeContestant?.name === teamName || match.awayContestant?.name === teamName)
+    .map((match) => {
+      const isHome = match.homeContestant?.name === teamName;
+      return {
+        ...match,
+        isHome,
+        team: isHome ? match.homeContestant : match.awayContestant,
+        opponent: isHome ? match.awayContestant : match.homeContestant,
+        teamScore: isHome ? match.homeScore : match.awayScore,
+        opponentScore: isHome ? match.awayScore : match.homeScore,
+      };
+    });
+}
+
+function renderCurrentGameweekFixtures(teamName) {
+  const fixtures = currentGameweekFixturesForTeam(teamName);
+  if (!fixtures.length) return '<span class="empty">No current gameweek fixture found.</span>';
+  return fixtures.map((fixture) => {
+    const played = fixture.teamScore !== null && fixture.teamScore !== undefined;
+    const meta = played ?
+      `${fixture.teamScore} - ${fixture.opponentScore}` :
+      new Date(fixture.kickoffAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+    return `<div class="fixture"><span>${fixture.isHome ? 'vs' : '@'} ${escapeHtml(fixture.opponent?.shortName || fixture.opponent?.name)}</span><span class="match-meta">${escapeHtml(fixture.tournamentCalendarName)} / ${meta}</span></div>`;
+  }).join('');
+}
+
 function renderMatch(match) {
   const stats = match.stats?.length
     ? match.stats.map((stat) => `<div class="match-stat"><span>${escapeHtml(stat.label)}</span><span>Total: ${escapeHtml(stat.total)} <strong>${escapeHtml(stat.points)} pts</strong></span></div>`).join('')
@@ -308,14 +349,16 @@ function bindPlayerEvents() {
 
 async function init() {
   try {
-    const [playersResponse, teamsResponse] = await Promise.all([
+    const [playersResponse, teamsResponse, currentGameweekResponse] = await Promise.all([
       fetch(`${dataUri}players.json`, { cache: 'no-store' }),
       fetch(`${dataUri}teams.json`, { cache: 'no-store' }),
+      fetch(`${dataUri}currentgameweek.json`, { cache: 'no-store' }),
     ]);
     if (!playersResponse.ok || !teamsResponse.ok) throw new Error('Could not load data files');
     state.players = await playersResponse.json();
     const teamsPayload = await teamsResponse.json();
     state.teams = teamsPayload.data || [];
+    state.currentGameweek = currentGameweekResponse.ok ? (await currentGameweekResponse.json()).data?.matches || [] : [];
     render();
   } catch (error) {
     errorState.textContent = 'The data directory could not be loaded. Start the site through a local web server so the JSON files can be fetched.';

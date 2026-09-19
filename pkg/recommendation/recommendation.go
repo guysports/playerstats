@@ -208,7 +208,8 @@ func tableForTeam(table []types.LeagueTableEntry, name string) (types.LeagueTabl
 }
 
 func normalizeTeamName(name string) string {
-	return strings.ToLower(strings.NewReplacer(" fc", "", " afc", "", "&", "and", ".", "").Replace(strings.TrimSpace(name)))
+	lowered := strings.ToLower(strings.TrimSpace(name))
+	return strings.NewReplacer(" fc", "", " afc", "", "&", "and", ".", "").Replace(lowered)
 }
 
 func fixtureAdjustment(fixture FixtureAssessment) float64 {

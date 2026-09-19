@@ -1,17 +1,49 @@
 package helper
 
-import (
-	"strings"
-	"testing"
-)
+import "testing"
 
-func TestParsePremierLeagueTable(t *testing.T) {
-	html := `<table><tr><th>Team</th><th>Played</th><th>Won</th><th>Drawn</th><th>Lost</th><th>Goals For</th><th>Goals Against</th><th>Goal Difference</th><th>Points</th><th>Form</th></tr><tr><td>1</td><td><a>Liverpool</a></td><td>3</td><td>3</td><td>0</td><td>0</td><td>7</td><td>1</td><td>6</td><td>9</td><td>W W D L W W</td></tr><tr><td>2</td><td>Manchester City</td><td>3</td><td>2</td><td>1</td><td>0</td><td>6</td><td>2</td><td>4</td><td>7</td><td>W D W</td></tr></table>`
-	entries, err := ParsePremierLeagueTable(strings.NewReader(html))
+const standingsFixture = `{
+  "standings": [
+    {
+      "type": "TOTAL",
+      "table": [
+        {"position": 1, "team": {"name": "Liverpool FC"}, "playedGames": 3, "won": 3, "draw": 0, "lost": 0, "points": 9, "goalsFor": 7, "goalsAgainst": 1, "goalDifference": 6},
+        {"position": 2, "team": {"name": "Manchester City FC"}, "playedGames": 3, "won": 2, "draw": 1, "lost": 0, "points": 7, "goalsFor": 6, "goalsAgainst": 2, "goalDifference": 4}
+      ]
+    }
+  ]
+}`
+
+const matchesFixture = `{
+  "matches": [
+    {"utcDate": "2026-08-01T15:00:00Z", "status": "FINISHED", "homeTeam": {"name": "Liverpool FC"}, "awayTeam": {"name": "Manchester City FC"}, "score": {"winner": "HOME_TEAM"}},
+    {"utcDate": "2026-08-08T15:00:00Z", "status": "FINISHED", "homeTeam": {"name": "Manchester City FC"}, "awayTeam": {"name": "Liverpool FC"}, "score": {"winner": "DRAW"}},
+    {"utcDate": "2026-08-15T15:00:00Z", "status": "SCHEDULED", "homeTeam": {"name": "Liverpool FC"}, "awayTeam": {"name": "Manchester City FC"}, "score": {"winner": null}}
+  ]
+}`
+
+func TestParseFootballDataStandings(t *testing.T) {
+	entries, err := ParseFootballDataStandings([]byte(standingsFixture))
 	if err != nil {
-		t.Fatalf("ParsePremierLeagueTable() returned an error: %v", err)
+		t.Fatalf("ParseFootballDataStandings() returned an error: %v", err)
 	}
-	if len(entries) != 2 || entries[0].Team != "Liverpool" || entries[0].Position != 1 || entries[0].Points != 9 || entries[0].RecentForm != "WWDLWW" || entries[0].FormPoints != 13 {
-		t.Fatalf("entries = %+v, want Liverpool in first place with 9 points", entries)
+	if len(entries) != 2 || entries[0].Team != "Liverpool FC" || entries[0].Position != 1 || entries[0].Points != 9 {
+		t.Fatalf("entries = %+v, want Liverpool FC in first place with 9 points", entries)
+	}
+}
+
+func TestApplyRecentForm(t *testing.T) {
+	entries, err := ParseFootballDataStandings([]byte(standingsFixture))
+	if err != nil {
+		t.Fatalf("ParseFootballDataStandings() returned an error: %v", err)
+	}
+	if err := ApplyRecentForm(entries, []byte(matchesFixture)); err != nil {
+		t.Fatalf("ApplyRecentForm() returned an error: %v", err)
+	}
+	if entries[0].RecentForm != "WD" || entries[0].FormPoints != 4 {
+		t.Fatalf("entries[0] = %+v, want Liverpool FC form WD with 4 points", entries[0])
+	}
+	if entries[1].RecentForm != "LD" || entries[1].FormPoints != 1 {
+		t.Fatalf("entries[1] = %+v, want Manchester City FC form LD with 1 point", entries[1])
 	}
 }

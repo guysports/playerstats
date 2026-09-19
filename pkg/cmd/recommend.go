@@ -1,11 +1,11 @@
 package cmd
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"guysports/playerstats/pkg/betfair"
@@ -83,9 +83,21 @@ func (r *Recommend) Run(globals *Globals) error {
 	if err != nil {
 		return err
 	}
+	currentGameweekMatches, err := loadCurrentGameweekMatches(r.DataDir)
+	if err != nil {
+		fmt.Printf("warning: current gameweek fixtures unavailable (%v); falling back to nextGameweekFixtures\n", err)
+		currentGameweekMatches = nil
+	}
+	currentFixturesByTeam := currentGameweekFixturesByTeam(currentGameweekMatches)
+	currentOddsByTeams := currentGameweekOddsByTeams(currentGameweekMatches)
+	for i := range players {
+		if fixtures, ok := currentFixturesByTeam[players[i].ContestantName]; ok {
+			players[i].NextGameweekFixtures = fixtures
+		}
+	}
 	var table []types.LeagueTableEntry
 	if globals.LeagueTableURL != "" {
-		table, err = loadLeagueTable(globals.LeagueTableURL)
+		table, err = loadLeagueTable(globals.LeagueTableURL, globals.FootballDataAPIToken)
 		if err != nil {
 			fmt.Printf("warning: league table unavailable (%v); continuing without table context\n", err)
 			table = nil
@@ -111,11 +123,13 @@ func (r *Recommend) Run(globals *Globals) error {
 		fixtures := make([]fixtureInput, 0, len(item.Player.NextGameweekFixtures))
 		for _, fixture := range item.Fixtures {
 			fixtureInputData := fixtureInput{Opponent: fixture.Opponent, Venue: fixture.Venue, Gameweek: fixture.Gameweek, Difficulty: fixture.Difficulty, OpponentStrength: fixture.OpponentStrength, RelativeStrength: fixture.RelativeStrength, OpponentPosition: fixture.OpponentPosition, OpponentForm: fixture.OpponentForm, OpponentFormRate: fixture.OpponentFormRate}
-			if betfairClient != nil {
-				homeTeam, awayTeam := item.Player.ContestantName, fixture.Opponent
-				if fixture.Venue == "away" {
-					homeTeam, awayTeam = fixture.Opponent, item.Player.ContestantName
-				}
+			homeTeam, awayTeam := item.Player.ContestantName, fixture.Opponent
+			if fixture.Venue == "away" {
+				homeTeam, awayTeam = fixture.Opponent, item.Player.ContestantName
+			}
+			if odds, ok := currentOddsByTeams[oddsKey(homeTeam, awayTeam)]; ok {
+				fixtureInputData.BetfairOdds = &odds
+			} else if betfairClient != nil {
 				if odds, err := betfairClient.MatchOdds(homeTeam, awayTeam); err == nil {
 					fixtureInputData.BetfairOdds = &betfairOddsInput{Home: odds.Home, Draw: odds.Draw, Away: odds.Away}
 				} else {
@@ -168,12 +182,96 @@ func (r *Recommend) printExisting(globals *Globals) error {
 	return nil
 }
 
-func loadLeagueTable(source string) ([]types.LeagueTableEntry, error) {
-	data, err := helper.GetJSON(source)
+// loadLeagueTable fetches the Premier League table and recent form from the
+// football-data.org API. The standings endpoint doesn't report form on the
+// free tier, so recent form is derived separately from finished matches.
+func loadLeagueTable(baseURL, apiToken string) ([]types.LeagueTableEntry, error) {
+	headers := map[string]string{}
+	if apiToken != "" {
+		headers["X-Auth-Token"] = apiToken
+	}
+
+	standingsData, err := helper.GetJSONWithHeaders(baseURL+"/standings", headers)
+	if err != nil {
+		return nil, fmt.Errorf("fetch standings: %w", err)
+	}
+	entries, err := helper.ParseFootballDataStandings(standingsData)
 	if err != nil {
 		return nil, err
 	}
-	return helper.ParsePremierLeagueTable(bytes.NewReader(data))
+
+	matchesData, err := helper.GetJSONWithHeaders(baseURL+"/matches?status=FINISHED", headers)
+	if err != nil {
+		fmt.Printf("warning: recent form unavailable (%v); continuing without it\n", err)
+		return entries, nil
+	}
+	if err := helper.ApplyRecentForm(entries, matchesData); err != nil {
+		fmt.Printf("warning: recent form unavailable (%v); continuing without it\n", err)
+	}
+	return entries, nil
+}
+
+// loadCurrentGameweekMatches reads data/currentgameweek.json; a missing file
+// is not an error since --gw is only dumped when a caller opts in.
+func loadCurrentGameweekMatches(dataDir string) ([]types.CurrentGameweekMatch, error) {
+	data, err := os.ReadFile(filepath.Join(dataDir, "currentgameweek.json"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var payload types.CurrentGameweekPayload
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return nil, err
+	}
+	return payload.Data.Matches, nil
+}
+
+// currentGameweekFixturesByTeam converts current gameweek matches into
+// Fixture lists keyed by team name, to override the potentially stale
+// NextGameweekFixtures on the player record.
+func currentGameweekFixturesByTeam(matches []types.CurrentGameweekMatch) map[string][]types.Fixture {
+	fixturesByTeam := make(map[string][]types.Fixture, len(matches)*2)
+	for _, match := range matches {
+		home := types.Fixture{
+			OpponentId: match.AwayContestant.ID, OpponentName: match.AwayContestant.Name, OpponentShortName: match.AwayContestant.ShortName,
+			ContestantFlagKey: match.AwayContestant.ContestantFlagKey, Status: match.Status, KickoffAt: match.KickoffAt,
+			Venue: "home", IsHome: true, GameWeek: match.Gameweek,
+		}
+		away := types.Fixture{
+			OpponentId: match.HomeContestant.ID, OpponentName: match.HomeContestant.Name, OpponentShortName: match.HomeContestant.ShortName,
+			ContestantFlagKey: match.HomeContestant.ContestantFlagKey, Status: match.Status, KickoffAt: match.KickoffAt,
+			Venue: "away", IsHome: false, GameWeek: match.Gameweek,
+		}
+		fixturesByTeam[match.HomeContestant.Name] = append(fixturesByTeam[match.HomeContestant.Name], home)
+		fixturesByTeam[match.AwayContestant.Name] = append(fixturesByTeam[match.AwayContestant.Name], away)
+	}
+	return fixturesByTeam
+}
+
+// currentGameweekOddsByTeams extracts the odds already embedded in
+// currentgameweek.json, keyed by home/away team pair, so the recommend
+// command doesn't need to call the Betfair API when they're available.
+func currentGameweekOddsByTeams(matches []types.CurrentGameweekMatch) map[string]betfairOddsInput {
+	odds := make(map[string]betfairOddsInput, len(matches))
+	for _, match := range matches {
+		if match.Odds == nil {
+			continue
+		}
+		home, homeErr := strconv.ParseFloat(match.Odds.HomePrice, 64)
+		draw, drawErr := strconv.ParseFloat(match.Odds.DrawPrice, 64)
+		away, awayErr := strconv.ParseFloat(match.Odds.AwayPrice, 64)
+		if homeErr != nil || drawErr != nil || awayErr != nil {
+			continue
+		}
+		odds[oddsKey(match.HomeContestant.Name, match.AwayContestant.Name)] = betfairOddsInput{Home: home, Draw: draw, Away: away}
+	}
+	return odds
+}
+
+func oddsKey(homeTeam, awayTeam string) string {
+	return strings.ToLower(strings.TrimSpace(homeTeam)) + "|" + strings.ToLower(strings.TrimSpace(awayTeam))
 }
 
 func formatFixtures(fixtures []types.Fixture) string {
