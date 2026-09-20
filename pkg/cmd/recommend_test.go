@@ -33,6 +33,42 @@ func TestReadPlayers(t *testing.T) {
 	}
 }
 
+func TestLoadFantasyTeam(t *testing.T) {
+	teamJSON := `{"success":true,"data":{"id":"team-1","teamName":"Test Team","formation":"3-5-2","totalPoints":505,"managerName":"G. Barden","players":[{"id":"squad-1","fantasyPlayerId":"player-1","isStarter":true,"isCaptain":true,"positionSlot":9,"totalPoints":39,"player":{"id":"player-1","displayName":"E. Haaland","position":"STR","price":14.5,"contestantName":"Manchester City"}}]}}`
+
+	var gotAuth string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		w.Write([]byte(teamJSON))
+	}))
+	defer server.Close()
+
+	team, err := loadFantasyTeam(server.URL+"/api/teams/scoring/%s", "team-1", "test-token")
+	if err != nil {
+		t.Fatalf("loadFantasyTeam() returned an error: %v", err)
+	}
+	if gotAuth != "Bearer test-token" {
+		t.Fatalf("Authorization header = %q, want %q", gotAuth, "Bearer test-token")
+	}
+	if team.TeamName != "Test Team" || team.Formation != "3-5-2" || len(team.Players) != 1 {
+		t.Fatalf("loadFantasyTeam() = %+v, want one player in Test Team", team)
+	}
+	if team.Players[0].Player.DisplayName != "E. Haaland" || !team.Players[0].IsCaptain {
+		t.Fatalf("loadFantasyTeam() player = %+v, want captain E. Haaland", team.Players[0])
+	}
+}
+
+func TestLoadFantasyTeamUnsuccessful(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"success":false,"data":{}}`))
+	}))
+	defer server.Close()
+
+	if _, err := loadFantasyTeam(server.URL+"/%s", "team-1", "test-token"); err == nil {
+		t.Fatal("loadFantasyTeam() expected an error for an unsuccessful response")
+	}
+}
+
 func TestReadMatchResultsAllowsMissingFiles(t *testing.T) {
 	dataDir := t.TempDir()
 	players := []types.Player{{PlayerId: "player-1"}, {PlayerId: "missing"}}

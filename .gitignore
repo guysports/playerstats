@@ -15,4 +15,5 @@
 # vendor/
 players
 *.json
+*/compare*.html
 playerstats

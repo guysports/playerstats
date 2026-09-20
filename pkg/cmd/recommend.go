@@ -212,6 +212,25 @@ func loadLeagueTable(baseURL, apiToken string) ([]types.LeagueTableEntry, error)
 	return entries, nil
 }
 
+// loadFantasyTeam fetches a manager's current squad from the team scoring
+// endpoint, ready for substitution analysis against the recommendation model.
+func loadFantasyTeam(sourceTemplate, teamID, dtToken string) (*types.FantasyTeam, error) {
+	url := fmt.Sprintf(sourceTemplate, teamID)
+	headers := map[string]string{"Authorization": "Bearer " + dtToken}
+	data, err := helper.GetJSONWithHeaders(url, headers)
+	if err != nil {
+		return nil, fmt.Errorf("fetch fantasy team: %w", err)
+	}
+	var payload types.FantasyTeamPayload
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return nil, fmt.Errorf("parse fantasy team: %w", err)
+	}
+	if !payload.Success {
+		return nil, fmt.Errorf("fantasy team request for %s was not successful", teamID)
+	}
+	return &payload.Data, nil
+}
+
 // loadCurrentGameweekMatches reads data/currentgameweek.json; a missing file
 // is not an error since --gw is only dumped when a caller opts in.
 func loadCurrentGameweekMatches(dataDir string) ([]types.CurrentGameweekMatch, error) {

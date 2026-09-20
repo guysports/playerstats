@@ -13,6 +13,7 @@ var cli struct {
 	Dump      cmd.Dump      `cmd:"" help:"Dump all player data to data/players.json"`
 	Recommend cmd.Recommend `cmd:"" help:"Rank upcoming player opportunities and explain them with Ollama"`
 	Compare   cmd.Compare   `cmd:"" help:"Compare a model-only recommendation file against actual gameweek results"`
+	Team      cmd.Team      `cmd:"" help:"Print a fantasy team's current squad"`
 }
 
 func main() {

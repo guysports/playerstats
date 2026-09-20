@@ -87,6 +87,58 @@ type (
 		GameWeek          int     `json:"gameweek"`
 	}
 
+	// FantasyTeamPayload is the response from the team scoring endpoint,
+	// used to load a manager's current squad for substitution analysis.
+	FantasyTeamPayload struct {
+		Success bool        `json:"success"`
+		Data    FantasyTeam `json:"data"`
+	}
+
+	FantasyTeam struct {
+		Id                         string              `json:"id"`
+		UserId                     string              `json:"userId"`
+		TournamentCalendarId       string              `json:"tournamentCalendarId"`
+		TeamName                   string              `json:"teamName"`
+		BudgetRemaining            float64             `json:"budgetRemaining"`
+		TransfersUsed              int                 `json:"transfersUsed"`
+		CaptainFantasyPlayerId     string              `json:"captainFantasyPlayerId"`
+		ViceCaptainFantasyPlayerId string              `json:"viceCaptainFantasyPlayerId"`
+		Formation                  string              `json:"formation"`
+		Players                    []FantasyTeamPlayer `json:"players"`
+		TotalPoints                int                 `json:"totalPoints"`
+		ManagerName                string              `json:"managerName"`
+	}
+
+	FantasyTeamPlayer struct {
+		Id              string                  `json:"id"`
+		FantasyPlayerId string                  `json:"fantasyPlayerId"`
+		IsStarter       bool                    `json:"isStarter"`
+		IsCaptain       bool                    `json:"isCaptain"`
+		IsViceCaptain   bool                    `json:"isViceCaptain"`
+		PositionSlot    int                     `json:"positionSlot"`
+		TotalPoints     int                     `json:"totalPoints"`
+		Player          FantasyTeamPlayerDetail `json:"player"`
+	}
+
+	FantasyTeamPlayerDetail struct {
+		Id                  string  `json:"id"`
+		FirstName           string  `json:"firstName"`
+		LastName            string  `json:"lastName"`
+		ShortFirstName      string  `json:"shortFirstName"`
+		ShortLastName       string  `json:"shortLastName"`
+		MatchName           string  `json:"matchName"`
+		DisplayName         string  `json:"displayName"`
+		Position            string  `json:"position"`
+		Price               float64 `json:"price"`
+		AvailabilityDisplay *string `json:"availabilityDisplay"`
+		IsVisible           bool    `json:"isVisible"`
+		HasLeft             bool    `json:"hasLeft"`
+		ShirtKey            string  `json:"shirtKey"`
+		ContestantFlagKey   string  `json:"contestantFlagKey"`
+		ContestantName      string  `json:"contestantName"`
+		ContestantShortName string  `json:"contestantShortName"`
+	}
+
 	PlayerFilter struct {
 		Team        string
 		Job         string
