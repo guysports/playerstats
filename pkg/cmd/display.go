@@ -229,8 +229,12 @@ func formatAsHtml(players []types.RenderedPlayer, password string) {
 			fmt.Printf("Error opening file %v\n", err)
 			return
 		}
-		tmpl.Execute(f, player)
-		f.Close()
+		if err := tmpl.Execute(f, player); err != nil {
+			fmt.Printf("Error rendering file %v\n", err)
+		}
+		if err := f.Close(); err != nil {
+			fmt.Printf("Error closing file %v\n", err)
+		}
 	}
 	err = uploadPlayerStats(players, password)
 	if err != nil {
@@ -245,7 +249,11 @@ func uploadPlayerStats(players []types.RenderedPlayer, password string) error {
 		return err
 	}
 
-	defer ftpClient.Quit()
+	defer func() {
+		if err := ftpClient.Quit(); err != nil {
+			fmt.Printf("error closing FTP connection %v\n", err)
+		}
+	}()
 	// Username / password authentication
 	if err = ftpClient.Login("guysports@guysports.co.uk", password); err != nil {
 		return err

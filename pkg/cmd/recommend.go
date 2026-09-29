@@ -294,21 +294,6 @@ func oddsKey(homeTeam, awayTeam string) string {
 	return strings.ToLower(strings.TrimSpace(homeTeam)) + "|" + strings.ToLower(strings.TrimSpace(awayTeam))
 }
 
-func formatFixtures(fixtures []types.Fixture) string {
-	if len(fixtures) == 0 {
-		return "fixture data unavailable"
-	}
-	formatted := make([]string, 0, len(fixtures))
-	for _, fixture := range fixtures {
-		venue := "away"
-		if fixture.IsHome {
-			venue = "home"
-		}
-		formatted = append(formatted, fmt.Sprintf("%s (%s, GW%d)", fixture.OpponentName, venue, fixture.GameWeek))
-	}
-	return strings.Join(formatted, ", ")
-}
-
 func formatRecommendationFixtures(fixtures []recommendation.FixtureAssessment) string {
 	if len(fixtures) == 0 {
 		return "fixture context unavailable"

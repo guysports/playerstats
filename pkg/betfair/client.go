@@ -158,7 +158,7 @@ func enableDebugLogging(client *Client) {
 			fmt.Printf("betfair debug: failed to read response body: %v\n", err)
 			return
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		resp.Body = io.NopCloser(bytes.NewReader(body))
 		fmt.Printf("betfair debug: response %s\nheaders: %v\nbody: %s\n", resp.Status, resp.Header, body)
 	}

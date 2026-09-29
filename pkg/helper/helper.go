@@ -33,16 +33,16 @@ func GetJSONWithHeaders(uri string, headers map[string]string) ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("cannot fetch URL %q: %v", uri, err)
 		}
-		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
 			if _, exists := headers["User-Agent"]; exists && headers["User-Agent"] != "" {
 				request.Header.Set("User-Agent", "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)")
-				resp.Body.Close()
+				if err := resp.Body.Close(); err != nil {
+					return nil, fmt.Errorf("close response body: %w", err)
+				}
 				resp, err = http.DefaultClient.Do(request)
 				if err != nil {
 					return nil, fmt.Errorf("cannot fetch URL %q: %v", uri, err)
 				}
-				defer resp.Body.Close()
 				if resp.StatusCode != http.StatusOK {
 					return nil, fmt.Errorf("unexpected http GET status: %s", resp.Status)
 				}
@@ -51,6 +51,7 @@ func GetJSONWithHeaders(uri string, headers map[string]string) ([]byte, error) {
 			}
 		}
 
+		defer func() { _ = resp.Body.Close() }()
 		bytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return nil, fmt.Errorf("unable read response body %s", err.Error())

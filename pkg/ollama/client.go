@@ -78,7 +78,7 @@ func (c *Client) Explain(prompt string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return "", fmt.Errorf("ollama returned HTTP %s", response.Status)

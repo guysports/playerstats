@@ -39,7 +39,7 @@ func TestLoadFantasyTeam(t *testing.T) {
 	var gotAuth string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
-		w.Write([]byte(teamJSON))
+		_, _ = w.Write([]byte(teamJSON))
 	}))
 	defer server.Close()
 
@@ -60,7 +60,7 @@ func TestLoadFantasyTeam(t *testing.T) {
 
 func TestLoadFantasyTeamUnsuccessful(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"success":false,"data":{}}`))
+		_, _ = w.Write([]byte(`{"success":false,"data":{}}`))
 	}))
 	defer server.Close()
 

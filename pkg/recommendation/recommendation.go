@@ -43,7 +43,7 @@ func RankWithResults(players []types.Player, results map[string][]types.GameWeek
 	return RankWithTable(players, results, nil, limit)
 }
 
-// RankWithTable includes BBC league position, goal difference, points rate,
+// RankWithTable includes Premier league position, goal difference, points rate,
 // and recent form when assessing team strength and fixture difficulty.
 func RankWithTable(players []types.Player, results map[string][]types.GameWeekMatch, table []types.LeagueTableEntry, limit int) []Recommendation {
 	enriched := make([]types.Player, len(players))

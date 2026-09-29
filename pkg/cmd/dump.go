@@ -151,7 +151,11 @@ func (d *Dump) syncDataDirectory(globals *Globals) error {
 	if err != nil {
 		return err
 	}
-	defer ftpConn.Quit()
+	defer func() {
+		if err := ftpConn.Quit(); err != nil {
+			fmt.Printf("error closing FTP connection %v\n", err)
+		}
+	}()
 
 	if err := ftpConn.Login("guysports@guysports.co.uk", globals.FtpPassword); err != nil {
 		return err

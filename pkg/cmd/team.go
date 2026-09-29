@@ -23,8 +23,8 @@ func (t *Team) Run(globals *Globals) error {
 }
 
 func printFantasyTeam(w io.Writer, team *types.FantasyTeam) {
-	fmt.Fprintf(w, "%s (manager: %s)\n", team.TeamName, team.ManagerName)
-	fmt.Fprintf(w, "Formation: %s | Total points: %d | Budget remaining: %.1f | Transfers used: %d\n\n",
+	_, _ = fmt.Fprintf(w, "%s (manager: %s)\n", team.TeamName, team.ManagerName)
+	_, _ = fmt.Fprintf(w, "Formation: %s | Total points: %d | Budget remaining: %.1f | Transfers used: %d\n\n",
 		team.Formation, team.TotalPoints, team.BudgetRemaining, team.TransfersUsed)
 
 	players := make([]types.FantasyTeamPlayer, len(team.Players))
@@ -43,7 +43,7 @@ func printFantasyTeam(w io.Writer, team *types.FantasyTeam) {
 			marker = " (VC)"
 		}
 		player := squadPlayer.Player
-		fmt.Fprintf(w, "%2d. [%s] %-4s %-20s %-22s %.1f  %3d pts%s\n",
+		_, _ = fmt.Fprintf(w, "%2d. [%s] %-4s %-20s %-22s %.1f  %3d pts%s\n",
 			squadPlayer.PositionSlot, status, player.Position, player.DisplayName, player.ContestantName, player.Price, squadPlayer.TotalPoints, marker)
 	}
 }

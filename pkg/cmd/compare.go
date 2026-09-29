@@ -228,9 +228,13 @@ func writeCompareHTML(outputPath string, gameweek int, rows []compareRow) error 
 	if err != nil {
 		return err
 	}
-	defer file.Close()
-	return tmpl.Execute(file, struct {
+	executeErr := tmpl.Execute(file, struct {
 		Gameweek int
 		Rows     []compareRow
 	}{Gameweek: gameweek, Rows: rows})
+	closeErr := file.Close()
+	if executeErr != nil {
+		return executeErr
+	}
+	return closeErr
 }

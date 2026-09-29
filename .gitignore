@@ -17,3 +17,4 @@ players
 *.json
 */compare*.html
 playerstats
+bin
