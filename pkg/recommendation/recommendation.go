@@ -31,21 +31,29 @@ type FixtureAssessment struct {
 	OpponentFormRate float64
 }
 
+type RecommendationInterface interface {
+	Rank(players []types.Player, limit int) []Recommendation
+	RankWithResults(players []types.Player, results map[string][]types.GameWeekMatch, limit int) []Recommendation
+	RankWithTable(players []types.Player, results map[string][]types.GameWeekMatch, table []types.LeagueTableEntry, limit int) []Recommendation
+}
+
+type RecommendationEngine struct{}
+
 // Rank returns the strongest available players for the next gameweek.
 // It does not call an LLM and produces the same results for the same input.
-func Rank(players []types.Player, limit int) []Recommendation {
+func (e *RecommendationEngine) Rank(players []types.Player, limit int) []Recommendation {
 	return rank(players, nil, limit)
 }
 
 // RankWithResults ranks players using the per-player match records loaded from
 // the UUID-matches.json files, including appearance minutes.
-func RankWithResults(players []types.Player, results map[string][]types.GameWeekMatch, limit int) []Recommendation {
-	return RankWithTable(players, results, nil, limit)
+func (e *RecommendationEngine) RankWithResults(players []types.Player, results map[string][]types.GameWeekMatch, limit int) []Recommendation {
+	return e.RankWithTable(players, results, nil, limit)
 }
 
 // RankWithTable includes Premier league position, goal difference, points rate,
 // and recent form when assessing team strength and fixture difficulty.
-func RankWithTable(players []types.Player, results map[string][]types.GameWeekMatch, table []types.LeagueTableEntry, limit int) []Recommendation {
+func (e *RecommendationEngine) RankWithTable(players []types.Player, results map[string][]types.GameWeekMatch, table []types.LeagueTableEntry, limit int) []Recommendation {
 	enriched := make([]types.Player, len(players))
 	copy(enriched, players)
 	for i := range enriched {

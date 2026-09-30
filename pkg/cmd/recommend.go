@@ -114,7 +114,8 @@ func (r *Recommend) Run(globals *Globals) error {
 		}
 	}
 
-	recommendations := recommendation.RankWithTable(players, results, table, r.Limit)
+	var recommendationEngine recommendation.RecommendationInterface = &recommendation.RecommendationEngine{}
+	recommendations := recommendationEngine.RankWithTable(players, results, table, r.Limit)
 	for index, item := range recommendations {
 		fmt.Printf("%d. %s (%s, %s) score %.1f: %s | fixtures: %s\n", index+1, item.Player.DisplayName, item.Player.Position, item.Player.ContestantName, item.Score, strings.Join(item.Reasons, "; "), formatRecommendationFixtures(item.Fixtures))
 	}
