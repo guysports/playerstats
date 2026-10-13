@@ -42,12 +42,52 @@ func (d *Dump) dumpGameweekFixtures(globals *Globals) error {
 	if err != nil {
 		return err
 	}
+	fixtures, err = filterGameweekMatches(fixtures, d.GW)
+	if err != nil {
+		return err
+	}
 	var formatted bytes.Buffer
 	if err := json.Indent(&formatted, fixtures, "", "  "); err != nil {
 		return err
 	}
 	formatted.WriteByte('\n')
 	return os.WriteFile(filepath.Join("data", "currentgameweek.json"), formatted.Bytes(), 0644)
+}
+
+// filterGameweekMatches keeps only matches for gw because the endpoint can return every gameweek.
+func filterGameweekMatches(payload []byte, gw int) ([]byte, error) {
+	var root map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &root); err != nil {
+		return nil, err
+	}
+	var data map[string]json.RawMessage
+	if err := json.Unmarshal(root["data"], &data); err != nil {
+		return nil, err
+	}
+	var matches []json.RawMessage
+	if err := json.Unmarshal(data["matches"], &matches); err != nil {
+		return nil, err
+	}
+	kept := make([]json.RawMessage, 0, len(matches))
+	for _, raw := range matches {
+		var m struct {
+			Gameweek int `json:"gameweek"`
+		}
+		if err := json.Unmarshal(raw, &m); err != nil {
+			return nil, err
+		}
+		if m.Gameweek == gw {
+			kept = append(kept, raw)
+		}
+	}
+	var err error
+	if data["matches"], err = json.Marshal(kept); err != nil {
+		return nil, err
+	}
+	if root["data"], err = json.Marshal(data); err != nil {
+		return nil, err
+	}
+	return json.Marshal(root)
 }
 
 func (d *Dump) Run(globals *Globals) error {

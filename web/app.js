@@ -220,7 +220,7 @@ function renderPlayerSummary(player) {
   if (isGoalkeeper) ppmMetrics.push(metric('Claims', player.claims), metric('Punches', player.punches), metric('Keeper sweeps', player.keeperSweeps));
   return `${group('Player Summary', summaryMetrics)}${group('Scoring Metrics', scoringMetrics)}${group('PPM Metrics', ppmMetrics)}
   <div class="detail-section"><h3>Current gameweek fixture</h3><div class="fixture-list">${renderCurrentGameweekFixtures(player.contestantName)}</div></div>
-  <div class="detail-section"><h3>Next fixtures</h3><div class="fixture-list">${renderFixtures(player.nextGameweekFixtures)}</div></div>
+  <div class="detail-section"><h3>Next fixtures</h3><div class="fixture-list">${renderFixtures(nextFixtures(player.nextGameweekFixtures))}</div></div>
   <div class="detail-section match-history"><h3>Match history</h3><div class="loading">Loading match history...</div></div>`;
 }
 
@@ -270,6 +270,12 @@ async function loadTeamStats(group) {
 function renderFixtures(fixtures = []) {
   if (!fixtures.length) return '<span class="empty">No upcoming fixtures.</span>';
   return fixtures.map((fixture) => `<div class="fixture"><span>${fixture.isHome ? 'vs' : '@'} ${escapeHtml(fixture.opponentShortName || fixture.opponentName)}</span><span class="match-meta">GW ${fixture.gameweek} / ${new Date(fixture.kickoffAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}</span></div>`).join('');
+}
+
+// The current gameweek is shown separately, so drop it from the upcoming list.
+function nextFixtures(fixtures = []) {
+  const current = Math.max(0, ...state.currentGameweek.map((match) => match.gameweek || 0));
+  return fixtures.filter((fixture) => fixture.gameweek > current);
 }
 
 function currentGameweekFixturesForTeam(teamName) {
