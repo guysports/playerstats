@@ -219,9 +219,41 @@ function renderPlayerSummary(player) {
   ];
   if (isGoalkeeper) ppmMetrics.push(metric('Claims', player.claims), metric('Punches', player.punches), metric('Keeper sweeps', player.keeperSweeps));
   return `${group('Player Summary', summaryMetrics)}${group('Scoring Metrics', scoringMetrics)}${group('PPM Metrics', ppmMetrics)}
+  ${renderInjuryDetail(player)}
+  ${renderSuspensionDetail(player)}
   <div class="detail-section"><h3>Current gameweek fixture</h3><div class="fixture-list">${renderCurrentGameweekFixtures(player.contestantName)}</div></div>
   <div class="detail-section"><h3>Next fixtures</h3><div class="fixture-list">${renderFixtures(nextFixtures(player.nextGameweekFixtures))}</div></div>
-  <div class="detail-section match-history"><h3>Match history</h3><div class="loading">Loading match history...</div></div>`;
+  <div class="detail-section match-history"><h3>Last 5 Match History</h3><div class="loading">Loading match history...</div></div>`;
+}
+
+function formatInjuryDate(value) {
+  const date = value ? new Date(value) : null;
+  return date && !Number.isNaN(date.getTime()) ? date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : null;
+}
+
+function renderInjuryDetail(player) {
+  const injury = player.injuryDetails;
+  if (!injury) return '';
+  const rows = [
+    ['Injury', injury.type],
+    ['Status', injury.status],
+    ['Injured since', formatInjuryDate(injury.startDate)],
+    ['Expected return', formatInjuryDate(injury.expectedEndDate)],
+    ['Returned', formatInjuryDate(injury.endDate)],
+  ].filter(([, value]) => value);
+  return `<div class="detail-section"><h3>Injury Detail</h3><div class="fixture-list">${rows.map(([label, value]) => `<div class="fixture"><span>${label}</span><span class="match-meta">${escapeHtml(value)}</span></div>`).join('')}</div></div>`;
+}
+
+function renderSuspensionDetail(player) {
+  const suspension = player.suspensionDetails;
+  if (!suspension) return '';
+  const rows = [
+    ['Reason', suspension.description],
+    ['Type', suspension.type],
+    ['Suspended since', formatInjuryDate(suspension.startDate)],
+    ['Suspension ends', formatInjuryDate(suspension.endDate)],
+  ].filter(([, value]) => value);
+  return `<div class="detail-section"><h3>Suspension Details</h3><div class="fixture-list">${rows.map(([label, value]) => `<div class="fixture"><span>${label}</span><span class="match-meta">${escapeHtml(value)}</span></div>`).join('')}</div></div>`;
 }
 
 async function loadTeamStats(group) {
@@ -326,9 +358,9 @@ async function loadMatches(player) {
     if (!response.ok) throw new Error('Match history unavailable');
     const payload = await response.json();
     const history = detail.querySelector('.match-history');
-    history.innerHTML = `<h3>Match history</h3>${payload.data?.items?.length ? payload.data.items.slice(0, 5).map(renderMatch).join('') : '<span class="empty">No match history.</span>'}`;
+    history.innerHTML = `<h3>Last 5 Match History</h3>${payload.data?.items?.length ? payload.data.items.slice(0, 5).map(renderMatch).join('') : '<span class="empty">No match history.</span>'}`;
   } catch (error) {
-    detail.querySelector('.match-history').innerHTML = '<h3>Match history</h3><span class="empty">Match history is unavailable.</span>';
+    detail.querySelector('.match-history').innerHTML = '<h3>Last 5 Match History</h3><span class="empty">Match history is unavailable.</span>';
   }
 }
 

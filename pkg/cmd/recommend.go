@@ -17,6 +17,7 @@ import (
 
 type Recommend struct {
 	Limit         int    `help:"Number of recommendations to return" default:"5"`
+	Position      string `help:"Only rank players in this position (GK, DEF, MID, or STR)"`
 	DataDir       string `help:"Directory containing players.json and match files" default:"data"`
 	ModelOutput   string `help:"Filename to write the recommendation JSON payload to before submitting to Ollama" default:"model.json"`
 	ModelOnly     bool   `help:"Write the recommendation JSON payload and exit without sending it to Ollama"`
@@ -63,7 +64,14 @@ func (r *Recommend) Run(globals *Globals) error {
 		r.ModelOutput = "model.json"
 	}
 
+	position, err := normalizePosition(r.Position)
+	if err != nil {
+		return err
+	}
 	if r.Print {
+		if position != "" {
+			return fmt.Errorf("--position cannot be used with --print")
+		}
 		return r.printExisting(globals)
 	}
 
@@ -115,7 +123,23 @@ func (r *Recommend) Run(globals *Globals) error {
 	}
 
 	var recommendationEngine recommendation.RecommendationInterface = &recommendation.RecommendationEngine{}
-	recommendations := recommendationEngine.RankWithTable(players, results, table, r.Limit)
+	rankingLimit := r.Limit
+	if position != "" && rankingLimit > 0 {
+		rankingLimit = len(players)
+	}
+	recommendations := recommendationEngine.RankWithTable(players, results, table, rankingLimit)
+	if position != "" {
+		filtered := recommendations[:0]
+		for _, item := range recommendations {
+			if canonicalPosition(item.Player.Position) == position {
+				filtered = append(filtered, item)
+			}
+		}
+		recommendations = filtered
+		if len(recommendations) > r.Limit {
+			recommendations = recommendations[:r.Limit]
+		}
+	}
 	for index, item := range recommendations {
 		fmt.Printf("%d. %s (%s, %s) score %.1f: %s | fixtures: %s\n", index+1, item.Player.DisplayName, item.Player.Position, item.Player.ContestantName, item.Score, strings.Join(item.Reasons, "; "), formatRecommendationFixtures(item.Fixtures))
 	}
@@ -165,6 +189,23 @@ func (r *Recommend) Run(globals *Globals) error {
 	}
 	fmt.Printf("\nOllama explanation:\n%s\n", explanation)
 	return nil
+}
+
+func normalizePosition(position string) (string, error) {
+	if strings.TrimSpace(position) == "" {
+		return "", nil
+	}
+	normalized := canonicalPosition(position)
+	switch normalized {
+	case "GK", "DEF", "MID", "STR":
+		return normalized, nil
+	default:
+		return "", fmt.Errorf("invalid position %q: choose GK, DEF, MID, or STR", position)
+	}
+}
+
+func canonicalPosition(position string) string {
+	return strings.ToUpper(strings.TrimSpace(position))
 }
 
 // printExisting submits an already-generated model output file to Ollama

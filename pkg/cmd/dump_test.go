@@ -76,6 +76,10 @@ func TestDumpRun(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(fixtureDir, player.PlayerId+".json"), matches, 0644); err != nil {
 			t.Fatalf("os.WriteFile() returned an error: %v", err)
 		}
+		playerStats := fmt.Appendf(nil, `{"data":{"id":"%s"}}`, player.PlayerId)
+		if err := os.WriteFile(filepath.Join(fixtureDir, player.PlayerId+"-stats.json"), playerStats, 0644); err != nil {
+			t.Fatalf("os.WriteFile() returned an error: %v", err)
+		}
 	}
 	if err := os.MkdirAll("data", 0755); err != nil {
 		t.Fatalf("os.MkdirAll() returned an error: %v", err)
@@ -103,12 +107,13 @@ func TestDumpRun(t *testing.T) {
 		}
 		return fakeFTP, nil
 	}}).Run(&Globals{
-		Source:           source,
-		MatchesSource:    filepath.Join(fixtureDir, "%s.json"),
-		MatchStatsSource: server.URL + "/matches/%s/stats",
-		DTToken:          "test-token",
-		FtpPassword:      "secret",
-		DataFTPDirectory: "/subdomains/playerinsights/data",
+		Source:            source,
+		MatchesSource:     filepath.Join(fixtureDir, "%s.json"),
+		PlayerStatsSource: filepath.Join(fixtureDir, "%s-stats.json"),
+		MatchStatsSource:  server.URL + "/matches/%s/stats",
+		DTToken:           "test-token",
+		FtpPassword:       "secret",
+		DataFTPDirectory:  "/subdomains/playerinsights/data",
 	}); err != nil {
 		t.Fatalf("Dump.Run() returned an error: %v", err)
 	}
@@ -147,6 +152,14 @@ func TestDumpRun(t *testing.T) {
 		if string(matches) != want {
 			t.Fatalf("matches output for %s = %s", player.PlayerId, matches)
 		}
+		playerStats, err := os.ReadFile(filepath.Join("data", player.PlayerId+"-player.json"))
+		if err != nil {
+			t.Fatalf("os.ReadFile() returned an error for %s player stats: %v", player.PlayerId, err)
+		}
+		wantPlayerStats := fmt.Sprintf("{\n  \"data\": {\n    \"id\": \"%s\"\n  }\n}\n", player.PlayerId)
+		if string(playerStats) != wantPlayerStats {
+			t.Fatalf("player stats output for %s = %s", player.PlayerId, playerStats)
+		}
 	}
 
 	if got, err := os.ReadFile(filepath.Join("data", "player-1-match-result-stats.json")); err != nil {
@@ -161,5 +174,38 @@ func TestDumpRun(t *testing.T) {
 	wantStats := "{\n  \"stats\": [\n    {\n      \"label\": \"Minutes played\",\n      \"total\": 90\n    }\n  ]\n}\n"
 	if string(statsOutput) != wantStats {
 		t.Fatalf("downloaded stats = %s, want formatted JSON", statsOutput)
+	}
+}
+
+func TestDumpRunNoSyncSkipsFTP(t *testing.T) {
+	t.Chdir(t.TempDir())
+	fixtureDir := t.TempDir()
+	source := filepath.Join(fixtureDir, "players.json")
+	if err := os.WriteFile(source, []byte(`[{"playerId":"player-1"}]`), 0644); err != nil {
+		t.Fatalf("os.WriteFile() returned an error: %v", err)
+	}
+	for name, content := range map[string]string{
+		"player-1.json":       `{"data":{"items":[]}}`,
+		"player-1-stats.json": `{"data":{}}`,
+	} {
+		if err := os.WriteFile(filepath.Join(fixtureDir, name), []byte(content), 0644); err != nil {
+			t.Fatalf("os.WriteFile() returned an error: %v", err)
+		}
+	}
+
+	err := (&Dump{NoSync: true, NewFTPClient: func(addr string) (ftpClient, error) {
+		t.Errorf("FTP client created for %s despite NoSync", addr)
+		return nil, fmt.Errorf("unexpected ftp use")
+	}}).Run(&Globals{
+		Source:            source,
+		MatchesSource:     filepath.Join(fixtureDir, "%s.json"),
+		PlayerStatsSource: filepath.Join(fixtureDir, "%s-stats.json"),
+		FtpPassword:       "secret",
+	})
+	if err != nil {
+		t.Fatalf("Dump.Run() returned an error: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join("data", "player-1-player.json")); err != nil {
+		t.Fatalf("player stats were not written locally: %v", err)
 	}
 }

@@ -11,11 +11,24 @@ go run . recommend
 # Generate a model-only payload for comparison or other tooling
 go run . recommend --model-only --limit 100
 
+# Rank only strikers
+go run . recommend --position str
+
+# Rank only goalkeepers
+go run . recommend --position gk
+
 # Choose another output file
 go run . recommend --model-only --limit 100 --model-output gw5-model.json
 ```
 
 The command reads player data from `--data-dir` (default `data`) and writes the JSON payload to `--model-output` inside that directory (default `model.json`). `--limit` defaults to `5`. With `--model-only`, it stops after writing the JSON and does not call Ollama.
+
+The optional `--position` restricts recommendations to one position: `GK`,
+`DEF`, `MID`, or `STR`. The value is case-insensitive. When set, the command
+ranks all players first so team-strength and fixture-difficulty calculations
+still use the full player pool, then filters to the selected position and
+applies `--limit`. It cannot be combined with `--print`, which submits an
+existing model payload without recalculating recommendations.
 
 ## Score formula
 
@@ -153,7 +166,10 @@ The current league-table source is football-data.org. Its standings response doe
 
 ## Eligibility and ordering
 
-Players whose availability contains `injured` or `suspended` are excluded. If `--limit` is greater than the number of eligible players, all eligible players are returned. A non-positive limit returns no recommendations.
+Players whose availability contains `injured` or `suspended` are excluded. If
+`--position` is set, only players in that position are eligible for the output.
+If `--limit` is greater than the number of eligible players, all eligible
+players are returned. A non-positive limit returns no recommendations.
 
 Results are sorted by:
 

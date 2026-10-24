@@ -13,7 +13,7 @@ endif
 GOLANGCI_LINT_VERSION ?= v2.12.2
 GOFUMPT_VERSION ?= v0.11.0
 
-.PHONY: lint vet test build-raspbian build-darwin install-tools install-golangci-lint install-gofumpt
+.PHONY: lint vet test build build-raspbian build-darwin install-tools install-golangci-lint install-gofumpt
 
 install-tools: install-golangci-lint install-gofumpt
 
@@ -32,6 +32,8 @@ vet:
 
 test:
 	go test ./...
+
+build: build-raspbian build-darwin
 
 build-raspbian:
 	mkdir -p bin

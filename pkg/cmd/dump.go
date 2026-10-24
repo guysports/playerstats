@@ -21,6 +21,7 @@ type ftpClient interface {
 }
 
 type Dump struct {
+	NoSync       bool                                 `help:"Only download data locally; skip uploading the data directory to FTP" name:"no-sync"`
 	GW           int                                  `help:"Current gameweek number; fetches its fixtures to data/gameweek_<gw>.json so they aren't lost from nextGameweekFixtures once the gameweek rolls over" name:"gw"`
 	NewFTPClient func(addr string) (ftpClient, error) `kong:"-"`
 }
@@ -90,6 +91,21 @@ func filterGameweekMatches(payload []byte, gw int) ([]byte, error) {
 	return json.Marshal(root)
 }
 
+// dumpPlayerStats writes the player's stats from PlayerStatsSource to data/<playerID>-player.json.
+func (d *Dump) dumpPlayerStats(globals *Globals, playerID string) error {
+	stats, err := helper.GetJSON(fmt.Sprintf(globals.PlayerStatsSource, playerID))
+	if err != nil {
+		return err
+	}
+	var formatted bytes.Buffer
+	if err := json.Indent(&formatted, stats, "", "  "); err != nil {
+		return err
+	}
+	formatted.WriteByte('\n')
+	filename := fmt.Sprintf("%s-player.json", playerID)
+	return os.WriteFile(filepath.Join("data", filename), formatted.Bytes(), 0644)
+}
+
 func (d *Dump) Run(globals *Globals) error {
 	players, err := loadPlayers(globals.Source)
 	if err != nil {
@@ -126,6 +142,9 @@ func (d *Dump) Run(globals *Globals) error {
 		formatted.WriteByte('\n')
 		filename := fmt.Sprintf("%s-matches.json", player.PlayerId)
 		if err := os.WriteFile(filepath.Join("data", filename), formatted.Bytes(), 0644); err != nil {
+			return err
+		}
+		if err := d.dumpPlayerStats(globals, player.PlayerId); err != nil {
 			return err
 		}
 	}
@@ -179,6 +198,9 @@ func (d *Dump) Run(globals *Globals) error {
 		}
 	}
 
+	if d.NoSync {
+		return nil
+	}
 	return d.syncDataDirectory(globals)
 }
 

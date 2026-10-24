@@ -177,6 +177,66 @@ func TestRecommendRunWritesModelJSON(t *testing.T) {
 	}
 }
 
+func TestRecommendRunFiltersPositionBeforeApplyingLimit(t *testing.T) {
+	dataDir := t.TempDir()
+	players := []types.Player{
+		{PlayerId: "mid-1", DisplayName: "Top Midfielder", Position: "MID", Goals: 10},
+		{PlayerId: "str-1", DisplayName: "Forward", Position: "STR", Goals: 1},
+	}
+	playersData, err := json.Marshal(players)
+	if err != nil {
+		t.Fatalf("json.Marshal() returned an error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dataDir, "players.json"), playersData, 0644); err != nil {
+		t.Fatalf("os.WriteFile() returned an error: %v", err)
+	}
+
+	err = (&Recommend{Limit: 1, Position: "sTr", DataDir: dataDir, ModelOnly: true}).Run(&Globals{})
+	if err != nil {
+		t.Fatalf("Recommend.Run() returned an error: %v", err)
+	}
+
+	content, err := os.ReadFile(filepath.Join(dataDir, "model.json"))
+	if err != nil {
+		t.Fatalf("os.ReadFile() returned an error: %v", err)
+	}
+	var got []recommendationInput
+	if err := json.Unmarshal(content, &got); err != nil {
+		t.Fatalf("json.Unmarshal() returned an error: %v", err)
+	}
+	if len(got) != 1 || got[0].Name != "Forward" || got[0].Position != "STR" {
+		t.Fatalf("recommendations = %+v, want only the forward despite the higher-scoring midfielder", got)
+	}
+}
+
+func TestNormalizePosition(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"gk", "GK"},
+		{"DEF", "DEF"},
+		{" mid ", "MID"},
+		{"str", "STR"},
+		{"STR", "STR"},
+	}
+	for _, test := range tests {
+		t.Run(test.input, func(t *testing.T) {
+			got, err := normalizePosition(test.input)
+			if err != nil {
+				t.Fatalf("normalizePosition() error = %v", err)
+			}
+			if got != test.want {
+				t.Errorf("normalizePosition() = %q, want %q", got, test.want)
+			}
+		})
+	}
+
+	if _, err := normalizePosition("winger"); err == nil {
+		t.Fatal("normalizePosition() expected an error for an unsupported position")
+	}
+}
+
 func TestRecommendRunReportsOllamaFailure(t *testing.T) {
 	dataDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dataDir, "players.json"), []byte(`[]`), 0644); err != nil {

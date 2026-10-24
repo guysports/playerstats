@@ -8,6 +8,7 @@ type Globals struct {
 	Source                string        `env:"STATS_SOURCE" envDefault:"https://guysports.co.uk/gsadmin/players/1.json"`
 	MatchesSource         string        `env:"MATCHES_SOURCE" envDefault:"https://engagecraft-fantasy-backend-prod.azurewebsites.net/api/players/%s/matches?type=gameweek"`
 	MatchStatsSource      string        `env:"MATCH_STATS_SOURCE" envDefault:"https://engagecraft-fantasy-backend-prod.azurewebsites.net/api/matches/%s/stats"`
+	PlayerStatsSource     string        `env:"PLAYER_STATS_SOURCE" envDefault:"https://engagecraft-fantasy-backend-prod.azurewebsites.net/api/players/%s"`
 	GameweekMatchesSource string        `env:"GAMEWEEK_MATCHES_SOURCE" envDefault:"https://engagecraft-fantasy-backend-prod.azurewebsites.net/api/matches?type=gameweek&tournamentCalendarId=be2cf2c1-42ad-4aa2-8156-692b2bf03b09&gameweek=%d"`
 	TeamScoringSource     string        `env:"TEAM_SCORING_SOURCE" envDefault:"https://engagecraft-fantasy-backend-prod.azurewebsites.net/api/teams/scoring/%s"`
 	DTToken               string        `env:"DT_TOKEN" required:"yes"`
