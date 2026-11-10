@@ -3,7 +3,7 @@ package cmd
 import "time"
 
 type Globals struct {
-	FtpPassword           string        `env:"GSADMIN_PW" required:"yes"`
+	FtpPassword           string        `env:"GSADMIN_PW"`
 	Operation             string        `env:"PLAYER_OPERATION" envDefault:"all"`
 	Source                string        `env:"STATS_SOURCE" envDefault:"https://guysports.co.uk/gsadmin/players/1.json"`
 	MatchesSource         string        `env:"MATCHES_SOURCE" envDefault:"https://engagecraft-fantasy-backend-prod.azurewebsites.net/api/players/%s/matches?type=gameweek"`
@@ -11,7 +11,7 @@ type Globals struct {
 	PlayerStatsSource     string        `env:"PLAYER_STATS_SOURCE" envDefault:"https://engagecraft-fantasy-backend-prod.azurewebsites.net/api/players/%s"`
 	GameweekMatchesSource string        `env:"GAMEWEEK_MATCHES_SOURCE" envDefault:"https://engagecraft-fantasy-backend-prod.azurewebsites.net/api/matches?type=gameweek&tournamentCalendarId=be2cf2c1-42ad-4aa2-8156-692b2bf03b09&gameweek=%d"`
 	TeamScoringSource     string        `env:"TEAM_SCORING_SOURCE" envDefault:"https://engagecraft-fantasy-backend-prod.azurewebsites.net/api/teams/scoring/%s"`
-	DTToken               string        `env:"DT_TOKEN" required:"yes"`
+	DTToken               string        `env:"DT_TOKEN"`
 	DataFTPDirectory      string        `env:"DATA_FTP_DIRECTORY" envDefault:"/subdomains/playerinsights/data"`
 	OllamaURL             string        `env:"OLLAMA_URL" envDefault:"http://localhost:11434"`
 	OllamaModel           string        `env:"OLLAMA_MODEL" envDefault:"llama3.1:8b"`
