@@ -13,6 +13,35 @@ import (
 	"guysports/playerstats/pkg/types"
 )
 
+func TestRecommendationEngineSelection(t *testing.T) {
+	tests := []struct {
+		name    string
+		engine  string
+		weights string
+		wantErr bool
+	}{
+		{"default legacy", "", "", false},
+		{"relative defaults", "relative", "", false},
+		{"relative weights", "relative", "all_position=2, last_three=0", false},
+		{"legacy with weights", "legacy", "ppm=1", true},
+		{"unknown engine", "other", "", true},
+		{"unknown component", "relative", "other=1", true},
+		{"duplicate component", "relative", "ppm=1,ppm=2", true},
+		{"invalid number", "relative", "ppm=abc", true},
+		{"negative", "relative", "ppm=-1", true},
+		{"nan", "relative", "ppm=NaN", true},
+		{"malformed", "relative", "ppm", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := (&Recommend{Engine: tt.engine, Weights: tt.weights}).recommendationEngine()
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("engine error = %v, want error %t", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestReadPlayers(t *testing.T) {
 	dataDir := t.TempDir()
 	players := []types.Player{{PlayerId: "player-1", DisplayName: "Test Player", Position: "MID"}}
@@ -206,6 +235,42 @@ func TestRecommendRunFiltersPositionBeforeApplyingLimit(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].Name != "Forward" || got[0].Position != "STR" {
 		t.Fatalf("recommendations = %+v, want only the forward despite the higher-scoring midfielder", got)
+	}
+}
+
+func TestRecommendRelativeModelIncludesComponents(t *testing.T) {
+	dir := t.TempDir()
+	players := []types.Player{
+		{PlayerId: "mid", DisplayName: "Mid", Position: "MID", Goals: 10, Last3Average: 0},
+		{PlayerId: "str", DisplayName: "Forward", Position: "STR", Goals: 5, Last3Average: 10},
+		{PlayerId: "low", DisplayName: "Low", Position: "MID"},
+		{PlayerId: "injured", DisplayName: "Injured", Position: "MID", Goals: 100, AvailabilityDisplay: "injured"},
+	}
+	data, err := json.Marshal(players)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "players.json"), data, 0644); err != nil {
+		t.Fatal(err)
+	}
+	command := &Recommend{Limit: 1, Position: "STR", DataDir: dir, ModelOnly: true, Engine: "relative", Weights: "all_position=2,last_three=3"}
+	if err := command.Run(&Globals{}); err != nil {
+		t.Fatal(err)
+	}
+	data, err = os.ReadFile(filepath.Join(dir, "model.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var model []recommendationInput
+	if err := json.Unmarshal(data, &model); err != nil {
+		t.Fatal(err)
+	}
+	if len(model) != 1 || model[0].Name != "Forward" || model[0].Score != 4 {
+		t.Fatalf("unexpected model: %+v", model)
+	}
+	component := model[0].ScoreComponents["all_position"]
+	if len(model[0].ScoreComponents) != 7 || component.Raw != 30 || component.Normalized != 0.5 || component.Weight != 2 || component.Contribution != 1 {
+		t.Fatalf("unexpected score components: %+v", model[0].ScoreComponents)
 	}
 }
 

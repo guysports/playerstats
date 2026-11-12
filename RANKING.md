@@ -5,6 +5,12 @@ by `pkg/recommendation`. It records the inputs and rules that a future
 document-driven ranking implementation would need to represent. The code does
 not currently read this document; changing it alone does not change rankings.
 
+Two engines implement these rules. The default legacy engine adds the raw values
+as described below. The optional relative engine converts each raw component
+to a 0–1 fraction across eligible players and combines the fractions with
+configurable weights. See [RECOMMEND.md](RECOMMEND.md#ranking-engines) for
+the relative formula, component names, defaults, and usage.
+
 ## Ranking inputs
 
 The ranking uses the following player fields:
@@ -73,7 +79,8 @@ score = all-position score
       + sum of fixture adjustments
 ```
 
-All calculations use the values as supplied; the final score is not normalized.
+For the legacy engine, all calculations use the values as supplied; the final
+score is not normalized. These values are the raw inputs to the relative engine.
 
 ### PPM bonus
 

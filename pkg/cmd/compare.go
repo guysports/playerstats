@@ -176,7 +176,7 @@ tr:hover { background: #1a1d24; }
 <td>{{.Name}}</td>
 <td>{{.Team}}</td>
 <td>{{.Position}}</td>
-<td>{{printf "%.1f" .ModelScore}}</td>
+<td>{{printf "%.3f" .ModelScore}}</td>
 {{if .HasActual}}
 <td>{{.ActualScore}}</td>
 <td>{{.ActualRank}}</td>

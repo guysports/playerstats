@@ -23,17 +23,20 @@ type Recommend struct {
 	ModelOnly     bool   `help:"Write the recommendation JSON payload and exit without sending it to Ollama"`
 	Print         bool   `help:"Submit the existing model output file to Ollama without regenerating it"`
 	JSONLoginPath string `help:"Path to the Betfair login JSON file" env:"BETFAIR_LOGIN_PATH" default:"" name:"json-login-path"`
+	Engine        string `help:"Ranking engine: legacy or relative" default:"legacy" enum:"legacy,relative"`
+	Weights       string `help:"Relative engine weights, e.g. all_position=2,last_three=3"`
 }
 
 type recommendationInput struct {
-	PlayerId    string         `json:"player_id"`
-	Name        string         `json:"name"`
-	Position    string         `json:"position"`
-	Team        string         `json:"team"`
-	Score       float64        `json:"score"`
-	Opportunity string         `json:"opportunity"`
-	Reasons     []string       `json:"reasons"`
-	Fixtures    []fixtureInput `json:"fixtures"`
+	PlayerId        string                                   `json:"player_id"`
+	Name            string                                   `json:"name"`
+	Position        string                                   `json:"position"`
+	Team            string                                   `json:"team"`
+	Score           float64                                  `json:"score"`
+	ScoreComponents map[string]recommendation.ScoreComponent `json:"score_components,omitempty"`
+	Opportunity     string                                   `json:"opportunity"`
+	Reasons         []string                                 `json:"reasons"`
+	Fixtures        []fixtureInput                           `json:"fixtures"`
 }
 
 type fixtureInput struct {
@@ -68,9 +71,16 @@ func (r *Recommend) Run(globals *Globals) error {
 	if err != nil {
 		return err
 	}
+	engine, err := r.recommendationEngine()
+	if err != nil {
+		return err
+	}
 	if r.Print {
 		if position != "" {
 			return fmt.Errorf("--position cannot be used with --print")
+		}
+		if r.Engine == "relative" || r.Weights != "" {
+			return fmt.Errorf("--engine and --weights cannot be used with --print")
 		}
 		return r.printExisting(globals)
 	}
@@ -122,12 +132,11 @@ func (r *Recommend) Run(globals *Globals) error {
 		}
 	}
 
-	var recommendationEngine recommendation.RecommendationInterface = &recommendation.RecommendationEngine{}
 	rankingLimit := r.Limit
 	if position != "" && rankingLimit > 0 {
 		rankingLimit = len(players)
 	}
-	recommendations := recommendationEngine.RankWithTable(players, results, table, rankingLimit)
+	recommendations := engine.RankWithTable(players, results, table, rankingLimit)
 	if position != "" {
 		filtered := recommendations[:0]
 		for _, item := range recommendations {
@@ -141,7 +150,11 @@ func (r *Recommend) Run(globals *Globals) error {
 		}
 	}
 	for index, item := range recommendations {
-		fmt.Printf("%d. %s (%s, %s) score %.1f: %s | fixtures: %s\n", index+1, item.Player.DisplayName, item.Player.Position, item.Player.ContestantName, item.Score, strings.Join(item.Reasons, "; "), formatRecommendationFixtures(item.Fixtures))
+		score := fmt.Sprintf("%.1f", item.Score)
+		if r.Engine == "relative" {
+			score = fmt.Sprintf("%.3f", item.Score)
+		}
+		fmt.Printf("%d. %s (%s, %s) score %s: %s | fixtures: %s\n", index+1, item.Player.DisplayName, item.Player.Position, item.Player.ContestantName, score, strings.Join(item.Reasons, "; "), formatRecommendationFixtures(item.Fixtures))
 	}
 
 	promptData := make([]recommendationInput, 0, len(recommendations))
@@ -166,7 +179,7 @@ func (r *Recommend) Run(globals *Globals) error {
 		}
 		promptData = append(promptData, recommendationInput{
 			PlayerId: item.Player.PlayerId, Name: item.Player.DisplayName, Position: item.Player.Position, Team: item.Player.ContestantName,
-			Score: item.Score, Opportunity: item.Opportunity, Reasons: item.Reasons, Fixtures: fixtures,
+			Score: item.Score, ScoreComponents: item.ScoreComponents, Opportunity: item.Opportunity, Reasons: item.Reasons, Fixtures: fixtures,
 		})
 	}
 	prompt, err := json.MarshalIndent(promptData, "", "  ")
@@ -189,6 +202,41 @@ func (r *Recommend) Run(globals *Globals) error {
 	}
 	fmt.Printf("\nOllama explanation:\n%s\n", explanation)
 	return nil
+}
+
+func (r *Recommend) recommendationEngine() (recommendation.RecommendationInterface, error) {
+	engine := r.Engine
+	if engine == "" {
+		engine = "legacy"
+	}
+	if engine == "legacy" {
+		if r.Weights != "" {
+			return nil, fmt.Errorf("--weights requires --engine=relative")
+		}
+		return &recommendation.RecommendationEngine{}, nil
+	}
+	if engine != "relative" {
+		return nil, fmt.Errorf("unknown recommendation engine %q", engine)
+	}
+	weights := make(map[string]float64)
+	if r.Weights != "" {
+		for _, assignment := range strings.Split(r.Weights, ",") {
+			name, value, ok := strings.Cut(assignment, "=")
+			name, value = strings.TrimSpace(name), strings.TrimSpace(value)
+			if !ok || name == "" || value == "" {
+				return nil, fmt.Errorf("invalid weight %q: use component=number", assignment)
+			}
+			if _, exists := weights[name]; exists {
+				return nil, fmt.Errorf("duplicate weight for %s", name)
+			}
+			weight, err := strconv.ParseFloat(value, 64)
+			if err != nil {
+				return nil, fmt.Errorf("invalid weight for %s: %w", name, err)
+			}
+			weights[name] = weight
+		}
+	}
+	return recommendation.NewRelativeRecommendationEngine(weights)
 }
 
 func normalizePosition(position string) (string, error) {

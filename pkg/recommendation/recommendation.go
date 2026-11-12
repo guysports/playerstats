@@ -11,12 +11,20 @@ import (
 // Recommendation is a deterministic player opportunity result. The score is
 // deliberately transparent so an LLM can explain it without making the ranking.
 type Recommendation struct {
-	Player       types.Player
-	Score        float64
-	Opportunity  string
-	Reasons      []string
-	FixtureCount int
-	Fixtures     []FixtureAssessment
+	Player          types.Player
+	Score           float64
+	ScoreComponents map[string]ScoreComponent
+	Opportunity     string
+	Reasons         []string
+	FixtureCount    int
+	Fixtures        []FixtureAssessment
+}
+
+type ScoreComponent struct {
+	Raw          float64 `json:"raw"`
+	Normalized   float64 `json:"normalized"`
+	Weight       float64 `json:"weight"`
+	Contribution float64 `json:"contribution"`
 }
 
 type FixtureAssessment struct {
@@ -76,6 +84,10 @@ func rank(players []types.Player, table []types.LeagueTableEntry, limit int) []R
 		recommendations = append(recommendations, score(player, teamStrengths, table))
 	}
 
+	return sortAndLimit(recommendations, limit)
+}
+
+func sortAndLimit(recommendations []Recommendation, limit int) []Recommendation {
 	sort.SliceStable(recommendations, func(i, j int) bool {
 		if recommendations[i].Score != recommendations[j].Score {
 			return recommendations[i].Score > recommendations[j].Score

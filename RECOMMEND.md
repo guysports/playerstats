@@ -11,6 +11,13 @@ go run . recommend
 # Generate a model-only payload for comparison or other tooling
 go run . recommend --model-only --limit 100
 
+# Generate separate baseline and relative models from the same data
+go run . recommend --model-only --limit 100 --engine legacy --model-output legacy.json
+go run . recommend --model-only --limit 100 --engine relative --model-output relative.json
+
+# Increase the impact of recent form and reduce accumulated season scoring
+go run . recommend --model-only --engine relative --weights 'all_position=0.5,last_three=3'
+
 # Rank only strikers
 go run . recommend --position str
 
@@ -30,7 +37,50 @@ still use the full player pool, then filters to the selected position and
 applies `--limit`. It cannot be combined with `--print`, which submits an
 existing model payload without recalculating recommendations.
 
-## Score formula
+## Ranking engines
+
+The default `--engine legacy` retains the original scoring formula below.
+`--engine relative` independently normalizes each component across all eligible
+players before weighting it. For each raw component, the lowest value becomes
+0 and the highest becomes 1; other values are `(value - minimum) / (maximum -
+minimum)`. If all values are equal (including a single eligible player), that
+component contributes 0. Negative raw values are handled by the same formula.
+
+The relative score is the sum of each normalized value multiplied by its
+weight. Every weight defaults to 1; use `--weights` with comma-separated
+`component=number` assignments to override any of them. Weights must be finite
+and non-negative; zero disables a component. Available names are:
+
+| Weight name | Raw component |
+| --- | --- |
+| `all_position` | All-position score below |
+| `appearance` | Appearance score |
+| `last_three` | Positive last-three average, otherwise 0 |
+| `ppm` | PPM bonus band |
+| `defensive` | Defensive score for GK/DEF, otherwise 0 |
+| `fixture_count` | Fixture-count bonus |
+| `fixture_adjustment` | Sum of venue and difficulty adjustments |
+
+With equal weights, each component can contribute at most one point. Weighting
+changes the maximum possible contribution; the final sum is not constrained
+to 0–1. A relative model includes `score_components` in each JSON entry, with
+the raw value, normalized fraction, weight and contribution. Legacy JSON is
+unchanged. Scores depend on the eligible player pool, so compare rankings using
+the same input snapshot. An outlier changes the scale for that component.
+Normalization is performed before `--position` and
+`--limit` are applied, while injured and suspended players are excluded from
+the normalization pool. Team strengths still use all players. Raw defensive
+values of 0 for other positions participate in the common player pool; a player
+with no fixtures has zero raw fixture adjustment and count bonus. As in the
+legacy engine, a difficult fixture may have a negative adjustment, below the
+zero adjustment for no fixture.
+
+For comparison against actual results, pass either model file to `compare`;
+use separate `--output` paths to preserve both reports. `--weights` is valid only
+with the relative engine. The relative engine and weights cannot be used with
+`--print`, which submits a previously generated model unchanged.
+
+## Legacy score formula and raw components
 
 For each eligible player, the score starts with the all-position score:
 
@@ -59,7 +109,7 @@ score = all-position score
       + fixture adjustments
 ```
 
-All components use the values currently available in `players.json` and the per-player match files. There is no normalization or percentage weighting of the final player score, so a score is most useful for comparing players produced by the same run.
+All components use the values currently available in `players.json` and the per-player match files. The legacy score does not normalize or weight them; the relative engine uses these same values as its raw components.
 
 ### Appearance score
 
